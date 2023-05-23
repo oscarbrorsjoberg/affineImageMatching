@@ -7,9 +7,18 @@ What I've come across.
 
 # Datasets for Evaluation
 
+Datasets for evaluation are crucial to the task.
+
+# MegaDetph
+[link](https://www.cs.cornell.edu/projects/megadepth/)
+Mainly used to train single image depth estimation.
+Pretty large and comes in huge variations.
+
 # Hpatches
+See the repo.
 
 # ScanNet
+[link](http://www.scan-net.org/)
 
 # CDVS
 
@@ -17,6 +26,9 @@ What I've come across.
 # Affine stuff
 
 Test, Train and Implement with our data.
+
+## D2-Net
+
 
 ## LoFTR
 
@@ -34,6 +46,7 @@ Self and cross attention layers. (What are these?)
 SuperPoint 
 MagicPoint
 LIFT
+
 
 #Detector Free
 Contrastive loss.
@@ -140,5 +153,19 @@ earlier CUDA libraries making it uncompatible.
 [Here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker) is information on how to use and install docker with nvidia.
 
 [video](https://www.youtube.com/watch?v=jdip_6vTw0s)
+
+
+To run with dockerized cuda:
+
+'''
+  deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+'''
+https://stackoverflow.com/questions/70761192/docker-compose-equivalent-of-docker-run-gpu-all-option
 
 
