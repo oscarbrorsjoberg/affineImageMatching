@@ -22,9 +22,7 @@ See the repo.
 
 # CDVS
 
-
 # Affine stuff
-
 Test, Train and Implement with our data.
 
 ## D2-Net
@@ -49,14 +47,113 @@ LIFT
 
 
 #Detector Free
-Contrastive loss.
-NCNet
-DRCNet
+Contrastive loss 4d volume.
+Earlier work from the author:
+1. NCNet
+2. DRCNet
 
 
-#Result
+#### Method
+
+Standard convolutional architecture with FPN ( Feature Pyramide Network).
+
+## Local Feature CNN
+First a CNN to extract two feature maps for each image,  
+On a course (1/8) and a fine (1/2) of the image size.
+
+
+Both the coarse and fine representations go int tohe LoFtr Module.
+However there are other opertations, divided into to coarse-level local feature transform and 
+coarse to fine module.
+
+The first second step is to take the coarse features and pass then through coarse-level local feature transform.
+
+## 
+
+"Convolutional Neural Networks (CNNs) possess the in-
+ductive bias of translation equivariance and locality, which
+are well suited for local feature extraction.
+
+-- What?
+
+The downsam-
+pling introduced by the CNN also reduces the input length
+of the LoFTR module, which is crucial to ensure a manage-
+able computation cost."
+
+## The Transformer -- Attention layer
+
+Attention Q, K, V.
+
+Self attention:
+Embedded vector from patches in images. From the embedded vector we ectract query vector, key vector and value vector. 
+Query - what is important to my value?
+Key - what are the other patches responses.
+Value - the answer.
+
+
+## Linear vs Dot-Product (vanilla) Attention
+Linear attention is not as computationally complex O(N) instead of O(N2).
+
+Positional encoding in the transformer.
+Positional embedding are attached to the transformer?
+What are they and why do we need them?
+Transformer processes elements of information in parallel.
+For each element it combines information from the other elements through self attention.
+Each element does this aggregation by itsel, see query from above?
+The order of elements in a sequence is unknown to the attention layer, it has to be provided through the positional embedding -- an obvious hint of where the element is located in the sequence.
+The embeddings are added to the inital vector representations.
+Positional embeddings stay the same independent of the vector representations.
+
+### Back to method
+
+Coarse level matches. After the transformer module, we need to match features. This is done either with optimal trasport layer (SuperGlu) or an dual softmax. See the abrivations on the pretrained models. So the score matrix can be calculated from all the feature vectors. A matching probability is caculated with a double softmax on the two dimensions. The confidence matrix is thresholded and MNN is enforced as a model constraint.
+
+Fine level method. Use the coarse level. Cut out smaller areas. Run them through the LoFTR module. Create the feature maps. Correlate center vector of feature map with all vectors in opposite feature map. 
+
+### The supervision
+
+Learning the stuff comes from two losses, coarse and fine. 
+The ground truth labels, which the loss is computed towards, is produced in the same manner as for SuperGlue. These ground truth are compared with the negative log-likelihood towards the confidence matrix.
+L2 loss for fine level refinement.
+
+Sinkhorn iterations?
+
+#### Result
+
+HPatches
+
+ScannNet
+
+MegaDepth
+
+Visual Localization Benchmark
 
 #### Using the code
+
+##### Testing
+Able to run the notebook in the repo within my docker image.
+Testing the different pre-trained worked differently:
+
+1. indoor-ds 
+Worked no charm
+
+2. indoor-ot 
+
+3. outdoor-ds 
+Worked on the provided data, not on mine.
+
+4. outdoor-ot 
+
+Produced the following error.
+  ```
+
+  ```
+
+#### Training
+
+pytorch-lighting -- framework to facilitate training and abelation studies?
+
 
 
 ## SE2-LoFTR
