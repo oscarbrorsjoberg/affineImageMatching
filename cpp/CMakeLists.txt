@@ -13,8 +13,8 @@ endif()
 set(build_flags
     "-std=c++17"
     "-lstdc++fs" # filesystem
-    "Wall"
-    "Wextra"
+    # "Wall"
+    # "Wextra"
     "-pedantic"
     "-O0"
     "-g"
@@ -29,7 +29,12 @@ target_compile_options(${PROJECT_NAME}
 	${build_flags}
 )
 
+# target_include_directories(${PROJECT_NAME}
+#   PUBLIC
+#   ${OpenCV_INCLUDE_DIRS}
+#     )
+
 target_link_libraries(${PROJECT_NAME}
-	INTERFACE
+  PUBLIC
 	${OpenCV_LIBS}
     )
