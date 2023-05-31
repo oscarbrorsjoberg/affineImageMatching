@@ -2,11 +2,21 @@
 
 So these are my ramblings on how to handle new findings in image matching techniques.
 
+## Image Matching Benchmark
+
+[git](https://github.com/vcg-uvic/image-matching-benchmark)
+
+## Image Matching Local Features & Beyond
+
+[2020](https://www.youtube.com/watch?v=UQ4uJX7UDB8)
+[2021](https://www.youtube.com/watch?v=9cVV9m_b5Ys) 
+[2022](https://www.youtube.com/watch?v=Nr-hQG7k1bM) 
+
+
 There is a need to understand the datasets that has been used to pretrain these different models.
 What I've come across. 
 
 # Datasets for Evaluation
-
 Datasets for evaluation are crucial to the task.
 
 # MegaDetph
@@ -14,7 +24,7 @@ Datasets for evaluation are crucial to the task.
 Mainly used to train single image depth estimation.
 Pretty large and comes in huge variations.
 
-# Hpatches
+# Hpatches and Hs
 See the repo.
 
 # ScanNet
@@ -27,26 +37,23 @@ Test, Train and Implement with our data.
 
 ## D2-Net
 
-
 ## LoFTR
 
 [LoFTR](https://github.com/zju3dv/LoFTR) 
 The LoFTR repo does not only provide the code to run the LoFTR network but also some examples of improvement, not the SE2-LoFTR which seems really interesting. 
 1. QuadTreeAttention(https://github.com/Tangshitao/QuadTreeAttention)
 
-
 ### Article
-
 Uses a dense method, but instead of a cost volume a transformer is used. Cross attention layers.
 Self and cross attention layers. (What are these?)
 
-#Detector based -- learn the detector
+1. Detector based -- learn the detector
 SuperPoint 
 MagicPoint
 LIFT
 
 
-#Detector Free
+2. Detector Free
 Contrastive loss 4d volume.
 Earlier work from the author:
 1. NCNet
@@ -68,7 +75,7 @@ coarse to fine module.
 
 The first second step is to take the coarse features and pass then through coarse-level local feature transform.
 
-## 
+## Stuff
 
 "Convolutional Neural Networks (CNNs) possess the in-
 ductive bias of translation equivariance and locality, which
@@ -119,7 +126,7 @@ L2 loss for fine level refinement.
 
 Sinkhorn iterations?
 
-#### Result
+### Result
 
 HPatches
 
@@ -129,9 +136,9 @@ MegaDepth
 
 Visual Localization Benchmark
 
-#### Using the code
+### Using the code
 
-##### Testing
+#### Testing
 Able to run the notebook in the repo within my docker image.
 Testing the different pre-trained worked differently:
 
@@ -149,11 +156,8 @@ Produced the following error.
   ```
 
   ```
-
 #### Training
-
 pytorch-lighting -- framework to facilitate training and abelation studies?
-
 
 
 ## SE2-LoFTR
@@ -161,22 +165,50 @@ pytorch-lighting -- framework to facilitate training and abelation studies?
 [se2-loftr](https://github.com/georg-bn/se2-loftr) 
 
 ## SIFT-AID
-
 [code](https://rdguez-mariano.github.io/pages/sift-aid.html)
 
 ### The article
+Focuses on the need of viewpoint simulations to capture large viewpoint deformations, which are captured by affine maps.
+RootSift was, when this article was written the descriptor most suitable for affine viewpoint changes. 
+
+The author later goes on to describe the regular keypoint matching paradigm, detector and descriptor. 
+In this article they propose something that can replace a descriptor to better work under large viewport changes.
+
+The network takes a 60x60 patch and transform them to 6272-element vector descriptor.
+Cluster similar patches, despite their affine transformation, with respect to angle -- given the cosine proximity. 
+They are compressed to a binary descriptor by only keeping the sign at each element of the vector.
+
+These patches are created from by transforming patches in a particular manner, also describe in the ASIFT paper on how to generate viewpoints prior to the sift'ing in order to make the descriptors more affine invariant.
+
+Siamese network to train with hinge loss, using the result from both network given hard negative sample and hard positive sample.
 
 [Cosine proximity ](https://en.wikipedia.org/wiki/Cosine_similarity)
 
 ### The code
 
+The test py-tools/siftAid-test.py has been somewhat modified to be able to run it on any image.
+
 The code was fairly easy to use, there is function
 that runs sift-aid on two images and then writes two images:
+
  1. AID\_homography\_matches.png
  2. AID\_panorama.png
 
 The first one is a standard point matching image, drawing lines between matching points.
 The second is a transformation of im1 to im2 given the homography from the points.
+
+AID-SIGN (4 and 5)
+estimated time for calculating key points  4.617319583892822
+estimated time for matching   0.24948716163635254
+
+AID-COS (4 and 5)
+estimated time for calculating key points  4.626456022262573
+estimated time for matching   10.726578712463379
+
+#### Might be of interest:
+
+The code utilizes the [ORSA](https://github.com/pmoulon/IPOL_AC_RANSAC) library and does the matching with libDA.
+Also other general purpose cpp libs for solving image matching tasks.
 
 ## HardNet
 [HardNet](https://arxiv.org/pdf/1705.10872.pdf)
@@ -187,9 +219,7 @@ The second is a transformation of im1 to im2 given the homography from the point
 
 [AffineNet](https://arxiv.org/pdf/1711.06704.pdf)
 
-
 ## Stereo Matching by training a convolutional neural network to compare image patches
-
 [article](https://arxiv.org/pdf/1510.05970.pdf)
 
 ## Deep image homography estimation
@@ -202,15 +232,6 @@ The second is a transformation of im1 to im2 given the homography from the point
 
 # FlowNet
 
-## Image Matching Benchmark
-
-[git](https://github.com/vcg-uvic/image-matching-benchmark)
-
-## Image Matching Local Features & Beyond
-
-[2020](https://www.youtube.com/watch?v=UQ4uJX7UDB8)
-[2021](https://www.youtube.com/watch?v=9cVV9m_b5Ys) 
-[2022](https://www.youtube.com/watch?v=Nr-hQG7k1bM) 
 
 # Affine Maps Tests and Experiments
 
@@ -227,14 +248,12 @@ different perspectives.
 
 ### Affine2d -- opencv
 
-# ML-based affine invariant features
-
-
-
 ### Results
 
-
+# Descriptor learning?
 # What about detector learning?
+# Descriptor and decector free pipe lines?
+# Learning how to match?
 
 ### Running CUDA with docker and tensorflow applications
 

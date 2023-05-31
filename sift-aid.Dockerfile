@@ -1,5 +1,4 @@
-FROM sift-aid_pre_sift_aid
-MAINTAINER Oscar Sjoeberg
+FROM pre_sift_aid:1
 LABEL maintainer="oscarbror.sjoberg@gmail.com"
 
 WORKDIR /sift-aid

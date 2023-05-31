@@ -1,18 +1,19 @@
 FROM tensorflow/tensorflow:1.8.0-gpu-py3
-MAINTAINER Oscar Sjoeberg
 LABEL maintainer="oscarbror.sjoberg@gmail.com"
 
 ## replace with git pull?
 RUN mkdir /sift-aid 
 WORKDIR /sift-aid
-COPY ./ /sift-aid/
+
+# RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/3bf863cc.pub
+# RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1604/x86_64/7fa2af80.pub
 
 ## This takes up alot 
 ## What can I remove?
 
 RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y \
+    apt-get upgrade -y --allow-unauthenticated && \
+    apt-get install -y --allow-unauthenticated \
     cmake \
     pkg-config \
     python3-tk \
@@ -34,7 +35,9 @@ RUN apt-get update && \
     libvtk6-dev \ 
     zlib1g-dev 
 
+COPY ./sift-aid/ /sift-aid/
 RUN mkdir -p build && cd build && cmake .. && make
+
 ## make this one image
 # COPY ./requirements.txt /requirements.txt
 # RUN pip3 install --upgrade pip

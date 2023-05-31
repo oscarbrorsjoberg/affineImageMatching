@@ -31,18 +31,3 @@ ENV PATH /opt/conda/bin:$PATH
 
 RUN mkdir /app
 WORKDIR /app
-
-# setup conda virtual environment
-COPY ./LoFTR/environment.yaml /app/environment.yaml
-COPY ./LoFTR/requirements.txt /app/requirements.txt
-
-# RUN conda update conda \
-#     && conda env create -f ./environment.yaml
-
-# RUN echo "conda activate loftr" >> ~/.bashrc
-
-# ENV PATH /opt/conda/envs/loftr/bin:$PATH
-# ENV CONDA_DEFAULT_ENV $loftr
-
-
-
