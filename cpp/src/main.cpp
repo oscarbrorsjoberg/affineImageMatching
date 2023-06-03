@@ -231,12 +231,13 @@ int main(int argc, char *argv[])
     auto [w1, h1] = get_image_size(im1_path);
 
     // display image
-    cv::Mat disp = cv::Mat::zeros(cv::max(h0, h1), w0 + w1, CV_8UC1);
+    cv::Mat disp = cv::Mat::zeros(cv::max(h0, h1), w0 + w1, CV_8U);
     cv::Mat im0 = cv::imread(im0_path, cv::IMREAD_GRAYSCALE);
     cv::Mat im1 = cv::imread(im1_path, cv::IMREAD_GRAYSCALE);
 
     im0.copyTo(cv::Mat(disp, cv::Rect(0, 0, w0, h0)));
     im1.copyTo(cv::Mat(disp, cv::Rect(w0, 0, w1, h1)));
+    cv::cvtColor(disp, disp, cv::COLOR_GRAY2BGR);
 
     std::transform(kpt_type.begin(), kpt_type.end(), kpt_type.begin(), ::tolower);
 
@@ -267,6 +268,13 @@ int main(int argc, char *argv[])
       else
         matcher = cv::DescriptorMatcher::create("BruteForce-Hamming");
     }
+    else if(kpt_type == "akaze"){
+      backend = cv::AKAZE::create();
+      if(use_flann)
+        matcher = cv::makePtr<cv::FlannBasedMatcher>(cv::makePtr<cv::flann::LshIndexParams>(6,12,1));
+      else
+        matcher = cv::DescriptorMatcher::create("BruteForce-Hamming");
+    }
     else{
       throw std::runtime_error(kpt_type + " is not a known key-point backend");
     }
@@ -281,6 +289,12 @@ int main(int argc, char *argv[])
     auto t0 = std::chrono::high_resolution_clock::now();
     aff->detectAndCompute(im0, cv::Mat(), kp0, desc0);
     aff->detectAndCompute(im1, cv::Mat(), kp1, desc1);
+
+    if(kpt_type == "root-sift"){
+      /* TODO: calculate root sift*/
+    }
+
+
     auto t1 = std::chrono::high_resolution_clock::now();
     auto delta01 = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
     std::cout << "Number of keypoints im0: " << kp0.size() << std::endl;
@@ -296,9 +310,9 @@ int main(int argc, char *argv[])
 
     /* for(size_t i = 0; i < raw_matches.size(); ++i){ */
     for(const auto &cm: raw_matches){
-      if(cm.size() == 2 && cm[0].distance < cm[1].distance * 0.75f){
+      if(cm.size() == 2 && cm[0].distance < cm[1].distance * 0.75){
         p0.push_back(kp0[cm[0].queryIdx].pt);
-        p1.push_back(kp1[cm[1].queryIdx].pt);
+        p1.push_back(kp1[cm[0].trainIdx].pt);
         distances.push_back(cm[0].distance);
       }
     }
@@ -314,7 +328,6 @@ int main(int argc, char *argv[])
     auto t4 = std::chrono::high_resolution_clock::now();
     cv::Mat H = cv::findHomography(p0, p1, status, cv::RANSAC);
     int inliers = 0;
-
     for(size_t i = 0; i < status.size(); i++){
       if(status[i]){
         ppairs.push_back(std::make_tuple(p0[i], p1[i]));
@@ -328,19 +341,37 @@ int main(int argc, char *argv[])
     std::cout << "Time elapsed " << delta45.count()  << "ms" << std::endl;
 
     distances.resize(inliers);
-    // visualizing
+
+    // visualizing the mapping
+    std::vector<cv::Point2f> corners(4);
+    corners[0] = cv::Point2f(0.f, 0.f);
+    corners[1] = cv::Point2f((float)w0, 0.f);
+    corners[2] = cv::Point2f((float)w0, (float)h0);
+    corners[3] = cv::Point2f(0.f, (float)h0);
+
+    std::vector<cv::Point2i> icorners;
+    cv::perspectiveTransform(corners, corners, H);
+    cv::transform(corners, corners, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
+    cv::Mat(corners).convertTo(icorners, CV_32S);
+    cv::polylines(disp, icorners, true, cv::Scalar(255, 255, 255));
 
     std::vector<int> indices(inliers);
     cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
-
-
-
-
+    int thickness = 2;
+    /* for(auto &index : indices){ */
+    /*   const cv::Point2f &pi1 = std::get<0>(ppairs[index]); */
+    /*   const cv::Point2f &pi2 = std::get<1>(ppairs[index]); */
+    /*   auto shifted_point = pi2 + cv::Point2f((float)w0, 0.f); */
+    /*   cv::circle(disp, pi1, thickness, cv::Scalar(0, 255, 0), -1); */
+    /*   cv::circle(disp, shifted_point, thickness, cv::Scalar(0, 255, 0), -1); */
+    /*   cv::line(disp, pi1, shifted_point, cv::Scalar(0, 255, 0)); */
+    /* } */
 
     cv::imshow("affine find_obj", disp);
 
     std::cout << "Press q to quit window\n";
     std::chrono::duration<double, std::milli> wait_time(20);
+
     while(cv::pollKey() != 'q'){
       std::this_thread::sleep_for(wait_time);
     }
