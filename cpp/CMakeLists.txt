@@ -4,7 +4,14 @@ project("viewChange" VERSION 0.0.1)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+message("${CMAKE_MODULE_PATH}")
+
+if("${EXIV2_INCLUDES}" STREQUAL "")
+  message(FATAL_ERROR "Affine maps require Exiv2 -- please EXIV2_INCLUDES to include folder")
+endif()
+
 find_package(OpenCV 4.7 REQUIRED)
+# find_package(Exiv2 REQUIRED)
 
 if(NOT OpenCV_FOUND)
     message(FATAL_ERROR "Affine maps requires OpenCV!")
@@ -25,16 +32,17 @@ add_executable(${PROJECT_NAME}
     )
 
 target_compile_options(${PROJECT_NAME}
-	PUBLIC
+  PRIVATE
 	${build_flags}
 )
 
-# target_include_directories(${PROJECT_NAME}
-#   PUBLIC
-#   ${OpenCV_INCLUDE_DIRS}
-#     )
+target_include_directories(${PROJECT_NAME}
+  PRIVATE
+  ${EXIV2_INCLUDES}
+    )
 
 target_link_libraries(${PROJECT_NAME}
-  PUBLIC
+  PRIVATE
 	${OpenCV_LIBS}
+  exiv2      
     )

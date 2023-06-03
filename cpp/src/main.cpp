@@ -6,6 +6,8 @@
 #include <opencv2/xfeatures2d.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/calib3d.hpp>
+#include <exiv2/exiv2.hpp>
+
 
 #include <algorithm>
 #include <chrono>
@@ -14,7 +16,9 @@
 #include <iomanip>
 #include <filesystem>
 #include <optional>
+#include <tuple>
 #include <typeinfo>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -31,14 +35,14 @@ class inputArgBase{
     virtual ~inputArgBase() = default;
 
     inputArgBase(const std::string &name, const std::string &short_name, 
-              const std::string &description, bool required = false):
+        const std::string &description, bool required = false):
       name_(name),
       short_name_(short_name),
       description_(description),
       required_(required),
       updated_(false)
-    {
-    }
+  {
+  }
     virtual void set_value_from_string(const std::string &inpt) = 0;
     virtual std::string value_str() = 0;
     virtual bool value_is_set() = 0;
@@ -65,16 +69,16 @@ class inputArg : public inputArgBase {
 
   public:
     inputArg(const std::string &name, const std::string &short_name, 
-              const std::string &description, T* default_value, bool required = false):
+        const std::string &description, T* default_value, bool required = false):
       inputArgBase(name, short_name, description, required),
       value_(default_value)
-        {
-        }
+  {
+  }
 
     T get_value(){return *value_;}
     void set_value(T value){*value_ = value;}
     bool value_is_set() {return value_ != nullptr;}
-    
+
     std::string value_str(){
       std::ostringstream os;
       if(value_){
@@ -82,7 +86,7 @@ class inputArg : public inputArgBase {
           return os.str();
         }
         else{
-          throw std::runtime_error("Unable to set value!");
+          throw std::runtime_error("Unable to cast " + name_ + " to string");
         }
       }
       else{
@@ -98,11 +102,9 @@ class inputArg : public inputArgBase {
         updated_ = true;
       }
       else{
-        throw std::runtime_error("Unable to set value!");
+          throw std::runtime_error("Unable to convert " + name_  + " <" + typeid(value).name() + "!=" + typeid(value_).name() + ">");  
       }
     }
-
-
 };
 
 
@@ -112,12 +114,12 @@ class appInputOpts {
     std::vector<std::unique_ptr<inputArgBase>> pargs;
 
     template<typename T>
-    void add_argument(const std::string &long_name, const std::string &short_name,
-                 const std::string &description, T *var, bool required){
-      pargs.push_back(std::make_unique<inputArg<T>>( 
-                     long_name, short_name, description, 
-                     var, required));
-    }
+      void add_argument(const std::string &long_name, const std::string &short_name,
+          const std::string &description, T *var, bool required){
+        pargs.push_back(std::make_unique<inputArg<T>>( 
+              long_name, short_name, description, 
+              var, required));
+      }
 
     void help(){
       std::cout << " This is " << exe_name() << " a simple copy of OpenCVs asift. " << std::endl;
@@ -137,7 +139,13 @@ class appInputOpts {
         std::string current_arg_value{args[i + 1]};
         for(auto &parg: pargs){
           if(current_arg_key == parg->name_ || current_arg_key == parg->short_name_){
-            parg->set_value_from_string(current_arg_value);
+            if(!parg->is_updated()){
+              parg->set_value_from_string(current_arg_value);
+            }
+            else{
+              help();
+              throw std::runtime_error(current_arg_key + " is already set!");
+            }
           }
         }
       }
@@ -150,18 +158,66 @@ class appInputOpts {
     }
 };
 
+
+std::tuple<int, int> get_image_size(const std::string &im_path){
+  int imsizes[] = {-1, -1};
+  if(fs::path(im_path).extension() == ".ppm"){
+    std::ifstream ppmfile(im_path, std::ios::binary);
+
+    std::string headerline;
+    int read_headers = 0;
+    while(read_headers < 2){
+      std::getline(ppmfile, headerline);
+
+      if(!headerline.empty() && headerline[0] == '#')
+        continue;
+
+      if(read_headers == 0){
+        if(headerline != "P6"){
+          throw std::runtime_error(im_path + "not of P6 type");
+        }
+      }
+      else if(read_headers == 1){
+        std::istringstream iss(headerline);
+        for(int i = 0; i < 2; ++i){
+          std::string size;
+          std::getline(iss, size, ' ');
+          imsizes[i] = std::stoi(size);
+        }
+      }
+      read_headers++;
+    }
+    ppmfile.close();
+
+  }
+  else{
+    auto tim = Exiv2::ImageFactory::open(im_path);
+    tim->readMetadata();
+    imsizes[0] = tim->pixelWidth();
+    imsizes[1] = tim->pixelHeight();
+  }
+
+  return  std::make_tuple(imsizes[0], imsizes[1]);
+}
+
+
+
+
 int main(int argc, char *argv[])
 {
   try {
     std::string im0_path, im1_path, 
       kpt_type = "orb";
+
     bool use_flann = false;
+    bool vis = true;
 
     appInputOpts opts;
     opts.add_argument("--image0", "-im0", "path to first image", &im0_path, true);
     opts.add_argument("--image1", "-im1", "path to second image", &im1_path, true);
     opts.add_argument("--keypoint", "-k", "kpt type", &kpt_type, false);
     opts.add_argument("--flann", "-f",    "if using flann or brute force matching", &use_flann, false);
+    opts.add_argument("--vis", "-v",    "visualize the result of matching", &vis, false);
 
     if(!opts.parse_args(argc, argv)){
       opts.help();
@@ -171,10 +227,16 @@ int main(int argc, char *argv[])
     assert(fs::exists(fs::path(im0_path)));
     assert(fs::exists(fs::path(im1_path)));
 
+    auto [w0, h0] = get_image_size(im0_path);
+    auto [w1, h1] = get_image_size(im1_path);
+
+    // display image
+    cv::Mat disp = cv::Mat::zeros(cv::max(h0, h1), w0 + w1, CV_8UC1);
     cv::Mat im0 = cv::imread(im0_path, cv::IMREAD_GRAYSCALE);
     cv::Mat im1 = cv::imread(im1_path, cv::IMREAD_GRAYSCALE);
 
-    /* kpt_type.lower_case(); */
+    im0.copyTo(cv::Mat(disp, cv::Rect(0, 0, w0, h0)));
+    im1.copyTo(cv::Mat(disp, cv::Rect(w0, 0, w1, h1)));
 
     std::transform(kpt_type.begin(), kpt_type.end(), kpt_type.begin(), ::tolower);
 
@@ -194,9 +256,9 @@ int main(int argc, char *argv[])
     else if(kpt_type == "sift" || kpt_type == "sift-root"){
       backend = cv::SIFT::create();
       matcher = cv::DescriptorMatcher::create(use_flann ? 
-                                              "FlannBased" :
-                                              "BruteForce"
-                                              );
+          "FlannBased" :
+          "BruteForce"
+          );
     }
     else if(kpt_type == "brisk"){
       backend = cv::BRISK::create();
@@ -245,6 +307,7 @@ int main(int argc, char *argv[])
     std::cout << "Number of points after match: " << p0.size() << std::endl;
     std::cout << "Time elapsed " << delta23.count()  << "ms" << std::endl;
 
+    // find homography and decide inliers
     std::vector<uchar> status;
     std::vector<std::tuple<cv::Point2f, cv::Point2f>> ppairs;
 
@@ -265,6 +328,22 @@ int main(int argc, char *argv[])
     std::cout << "Time elapsed " << delta45.count()  << "ms" << std::endl;
 
     distances.resize(inliers);
+    // visualizing
+
+    std::vector<int> indices(inliers);
+    cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
+
+
+
+
+
+    cv::imshow("affine find_obj", disp);
+
+    std::cout << "Press q to quit window\n";
+    std::chrono::duration<double, std::milli> wait_time(20);
+    while(cv::pollKey() != 'q'){
+      std::this_thread::sleep_for(wait_time);
+    }
 
   }
   catch (const std::exception &e) {
@@ -272,5 +351,5 @@ int main(int argc, char *argv[])
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
-}
+  }
 
