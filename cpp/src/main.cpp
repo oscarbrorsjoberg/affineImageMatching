@@ -28,6 +28,7 @@ static std::string exe_name(){
   return out;
 }
 
+/* -- inputArgs struct */
 class inputArgBase{
   protected:
     bool updated_;
@@ -158,8 +159,9 @@ class appInputOpts {
     }
 };
 
+/* ---- input args end -- */ 
 
-std::tuple<int, int> get_image_size(const std::string &im_path){
+static std::tuple<int, int> get_image_size(const std::string &im_path){
   int imsizes[] = {-1, -1};
   if(fs::path(im_path).extension() == ".ppm"){
     std::ifstream ppmfile(im_path, std::ios::binary);
@@ -200,14 +202,59 @@ std::tuple<int, int> get_image_size(const std::string &im_path){
   return  std::make_tuple(imsizes[0], imsizes[1]);
 }
 
+static void write_model_matrix(const std::string &path,
+                               const cv::Mat &model_matrix)
+{
+  assert(model_matrix.size().width == 3 && 
+         model_matrix.size().height == 3);
 
+  std::ofstream outfile(path);
 
+  outfile << 
+   model_matrix.at<float>(0,0) << " " <<
+   model_matrix.at<float>(0,1) << " " <<
+   model_matrix.at<float>(0,2) << "\n" <<
+
+   model_matrix.at<float>(1,0) << " " <<
+   model_matrix.at<float>(1,1) << " " <<
+   model_matrix.at<float>(1,2) << "\n" <<
+
+   model_matrix.at<float>(2,0) << " " <<
+   model_matrix.at<float>(2,1) << " " <<
+   model_matrix.at<float>(2,2) << "\n";
+
+  outfile.close();
+}
+
+static void read_model_matrix(const std::string &path,
+                              cv::Mat &model_matrix)
+{
+  assert(model_matrix.size().width == 3 && 
+         model_matrix.size().height == 3);
+
+  std::ifstream infile(path);
+
+  infile >> model_matrix.at<float>(0,0) >> 
+   model_matrix.at<float>(0,1) >> 
+   model_matrix.at<float>(0,2) >> 
+
+   model_matrix.at<float>(1,0) >> 
+   model_matrix.at<float>(1,1) >> 
+   model_matrix.at<float>(1,2) >> 
+
+   model_matrix.at<float>(2,0) >> 
+   model_matrix.at<float>(2,1) >> 
+   model_matrix.at<float>(2,2); 
+
+  infile.close();
+}
 
 int main(int argc, char *argv[])
 {
   try {
-    std::string im0_path, im1_path, 
-      kpt_type = "orb";
+    std::string im0_path, im1_path, mat_in,
+      kpt_type = "orb",
+      mat_out = "im0_im1_mat";
 
     bool use_flann = false;
     bool vis = true;
@@ -218,6 +265,8 @@ int main(int argc, char *argv[])
     opts.add_argument("--keypoint", "-k", "kpt type", &kpt_type, false);
     opts.add_argument("--flann", "-f",    "if using flann or brute force matching", &use_flann, false);
     opts.add_argument("--vis", "-v",    "visualize the result of matching", &vis, false);
+    opts.add_argument("--matrix_out", "-mo",    "(F/H)Matrix output path", &mat_out, false);
+    opts.add_argument("--matrix_in", "-mi",    "(F/H)Matrix input path", &mat_in, false);
 
     if(!opts.parse_args(argc, argv)){
       opts.help();
@@ -294,7 +343,6 @@ int main(int argc, char *argv[])
       /* TODO: calculate root sift*/
     }
 
-
     auto t1 = std::chrono::high_resolution_clock::now();
     auto delta01 = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0);
     std::cout << "Number of keypoints im0: " << kp0.size() << std::endl;
@@ -342,18 +390,31 @@ int main(int argc, char *argv[])
 
     distances.resize(inliers);
 
+
     // visualizing the mapping
     std::vector<cv::Point2f> corners(4);
+    std::vector<cv::Point2f> corners_trans(4);
     corners[0] = cv::Point2f(0.f, 0.f);
     corners[1] = cv::Point2f((float)w0, 0.f);
     corners[2] = cv::Point2f((float)w0, (float)h0);
     corners[3] = cv::Point2f(0.f, (float)h0);
 
     std::vector<cv::Point2i> icorners;
-    cv::perspectiveTransform(corners, corners, H);
-    cv::transform(corners, corners, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
-    cv::Mat(corners).convertTo(icorners, CV_32S);
+    cv::perspectiveTransform(corners, corners_trans, H);
+    cv::transform(corners_trans, corners_trans, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
+    cv::Mat(corners_trans).convertTo(icorners, CV_32S);
     cv::polylines(disp, icorners, true, cv::Scalar(255, 255, 255));
+
+    if(!mat_in.empty()){
+      cv::Mat H_gt(3,3, CV_32F);
+      std::vector<cv::Point2f> corners_gt(4);
+      read_model_matrix(mat_in, H_gt);
+      cv::perspectiveTransform(corners, corners_gt, H_gt);
+      cv::transform(corners_gt, corners_gt, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
+      cv::Mat(corners_gt).convertTo(icorners, CV_32S);
+      cv::polylines(disp, icorners, true, cv::Scalar(0, 255, 0));
+
+    }
 
     std::vector<int> indices(inliers);
     cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
@@ -366,6 +427,8 @@ int main(int argc, char *argv[])
     /*   cv::circle(disp, shifted_point, thickness, cv::Scalar(0, 255, 0), -1); */
     /*   cv::line(disp, pi1, shifted_point, cv::Scalar(0, 255, 0)); */
     /* } */
+
+    write_model_matrix(mat_out, H);
 
     cv::imshow("affine find_obj", disp);
 
