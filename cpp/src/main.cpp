@@ -249,6 +249,82 @@ static void read_model_matrix(const std::string &path,
   infile.close();
 }
 
+
+void calcHomography(const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1, 
+                      std::vector<std::tuple<cv::Point2f, cv::Point2f>> &inliers,
+                      std::vector<float> &kptdistances,
+                      std::vector<double> &model_distance,
+                      cv::Mat &out
+                      ){
+
+    std::vector<uchar> status;
+    out = cv::findHomography(p0, p1, status, cv::RANSAC);
+    cv::Mat outInv = out.inv(); 
+
+    int inliers_cnt = 0;
+    for(size_t i = 0; i < status.size(); i++){
+      if(status[i]){
+        inliers.push_back(std::make_tuple(p0[i], p1[i]));
+        kptdistances[inliers_cnt++] = kptdistances[i];
+
+        cv::Mat p0_{(double)p0[i].x, (double)p0[i].y, 1.0};
+        cv::Mat p1_{(double)p1[i].x, (double)p1[i].y, 1.0};
+
+        cv::Mat phat01, phat10;
+        cv::gemm(out, p0_, 1.0, cv::Mat(), 0.0, phat01);
+        cv::gemm(outInv, p1_, 1.0, cv::Mat(), 0.0, phat10);
+
+        phat01 = phat01 / phat01.at<double>(2);
+        phat10 = phat10 / phat10.at<double>(2);
+
+        cv::Mat diff01 = p1_ - phat01;
+        cv::Mat diff10 = p0_ - phat10;
+
+        cv::Mat d0{diff01.at<double>(0), diff01.at<double>(1)};
+        cv::Mat d1{diff01.at<double>(0), diff01.at<double>(1)};
+
+        model_distance.push_back((cv::norm(d0) +
+                                  cv::norm(d1)) / 2);
+      }
+    }
+}
+
+cv::Mat calcFundamental(const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1, 
+                      std::vector<std::tuple<cv::Point2f, cv::Point2f>> &inliers,
+                      std::vector<float> &kptdistances,
+                      std::vector<double> &model_distance,
+                     cv::Mat &out 
+                      ){
+
+    std::vector<uchar> status;
+    out = cv::findFundamentalMat(p0, p1, status, cv::RANSAC);
+
+    int inliers_cnt = 0;
+    for(size_t i = 0; i < status.size(); i++){
+      if(status[i]){
+        inliers.push_back(std::make_tuple(p0[i], p1[i]));
+        kptdistances[inliers_cnt++] = kptdistances[i];
+
+/*         cv::Mat p0_{(double)p0[i].x, (double)p0[i].y, 1.0}; */
+/*         cv::Mat p1_{(double)p1[i].x, (double)p1[i].y, 1.0}; */
+
+/*         cv::Mat phat01, phat10; */
+/*         cv::gemm(out, p0_, 1.0, cv::Mat(), 0.0, phat01); */
+/*         cv::gemm(outInv, p1_, 1.0, cv::Mat(), 0.0, phat10); */
+
+/*         phat01 = phat01 / phat01.at<double>(0,2); */
+/*         phat10 = phat10 / phat10.at<double>(0,2); */
+/*         std::cout << phat01 << std::endl; */
+
+/*         auto diff01 = p1_ - phat01; */
+/*         auto diff10 = p0_ - phat10; */
+
+        model_distance.push_back((cv::norm(diff01) + cv::norm(diff10)) / 2);
+      }
+    }
+  return out;
+}
+
 int main(int argc, char *argv[])
 {
   try {
@@ -349,13 +425,12 @@ int main(int argc, char *argv[])
     std::cout << "Number of keypoints im1: " << kp1.size() << std::endl;
     std::cout << "Time elapsed " << delta01.count()  << "ms" << std::endl;
 
+    // point matching
     std::vector<std::vector<cv::DMatch>> raw_matches;
     std::vector<cv::Point2f> p0, p1;
     std::vector<float> distances;
-
     auto t2 = std::chrono::high_resolution_clock::now();
     matcher->knnMatch(desc0, desc1, raw_matches, 2);
-
     /* for(size_t i = 0; i < raw_matches.size(); ++i){ */
     for(const auto &cm: raw_matches){
       if(cm.size() == 2 && cm[0].distance < cm[1].distance * 0.75){
@@ -370,26 +445,60 @@ int main(int argc, char *argv[])
     std::cout << "Time elapsed " << delta23.count()  << "ms" << std::endl;
 
     // find homography and decide inliers
-    std::vector<uchar> status;
+    /* std::vector<uchar> status; */
     std::vector<std::tuple<cv::Point2f, cv::Point2f>> ppairs;
+    std::vector<double> model_error;
+
 
     auto t4 = std::chrono::high_resolution_clock::now();
-    cv::Mat H = cv::findHomography(p0, p1, status, cv::RANSAC);
-    int inliers = 0;
-    for(size_t i = 0; i < status.size(); i++){
-      if(status[i]){
-        ppairs.push_back(std::make_tuple(p0[i], p1[i]));
-        distances[inliers++] = distances[i];
-      }
-    }
+
+    cv::Mat H;
+    std::thread homThread(calcHomography, 
+                          std::ref(p0), 
+                          std::ref(p1), 
+                          std::ref(ppairs), 
+                          std::ref(distances),
+                          std::ref(model_error),
+                          std::ref(H)
+                          );
+
+
+
+
+    cv::Mat F;
+    std::vector<double> model_error_fund;
+    std::thread fundThread(calcFundamental, 
+                          std::ref(p0), 
+                          std::ref(p1), 
+                          std::ref(ppairs), 
+                          std::ref(model_error_fund),
+                          std::ref(F)
+                          );
+
+
+    homThread.join();
+    fundThread.join();
+
+    double Hmodel_error = 0.0;
+    std::for_each(model_error.begin(), model_error.end(), [&Hmodel_error](double me){
+        Hmodel_error += me;
+        });
+    Hmodel_error /= model_error.size();
+
+    /* double Hmodel_error = 0.0; */
+    /* std::for_each(model_error.begin(), model_error.end(), [&Hmodel_error](double me){ */
+    /*     Hmodel_error += me; */
+    /*     }); */
+    /* Hmodel_error /= model_error.size(); */
+
     auto t5 = std::chrono::high_resolution_clock::now();
     auto delta45 = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2);
     std::cout << "Number of inliers: " << ppairs.size() << std::endl;
     std::cout << "Number of inliers/matched: " << ppairs.size() << "/" << p0.size() << std::endl;
     std::cout << "Time elapsed " << delta45.count()  << "ms" << std::endl;
+    std::cout << "Model error " << Hmodel_error << "pix" << std::endl;
 
-    distances.resize(inliers);
-
+    distances.resize(ppairs.size());
 
     // visualizing the mapping
     std::vector<cv::Point2f> corners(4);
@@ -413,20 +522,19 @@ int main(int argc, char *argv[])
       cv::transform(corners_gt, corners_gt, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
       cv::Mat(corners_gt).convertTo(icorners, CV_32S);
       cv::polylines(disp, icorners, true, cv::Scalar(0, 255, 0));
-
     }
 
-    std::vector<int> indices(inliers);
+    std::vector<int> indices(ppairs.size());
     cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
     int thickness = 2;
-    /* for(auto &index : indices){ */
-    /*   const cv::Point2f &pi1 = std::get<0>(ppairs[index]); */
-    /*   const cv::Point2f &pi2 = std::get<1>(ppairs[index]); */
-    /*   auto shifted_point = pi2 + cv::Point2f((float)w0, 0.f); */
-    /*   cv::circle(disp, pi1, thickness, cv::Scalar(0, 255, 0), -1); */
-    /*   cv::circle(disp, shifted_point, thickness, cv::Scalar(0, 255, 0), -1); */
-    /*   cv::line(disp, pi1, shifted_point, cv::Scalar(0, 255, 0)); */
-    /* } */
+    for(auto &index : indices){
+      const cv::Point2f &pi1 = std::get<0>(ppairs[index]);
+      const cv::Point2f &pi2 = std::get<1>(ppairs[index]);
+      auto shifted_point = pi2 + cv::Point2f((float)w0, 0.f);
+      cv::circle(disp, pi1, thickness, cv::Scalar(0, 255, 0), -1);
+      cv::circle(disp, shifted_point, thickness, cv::Scalar(0, 255, 0), -1);
+      cv::line(disp, pi1, shifted_point, cv::Scalar(0, 255, 0));
+    }
 
     write_model_matrix(mat_out, H);
 
