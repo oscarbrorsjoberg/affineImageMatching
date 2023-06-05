@@ -380,19 +380,30 @@ int main(int argc, char *argv[])
     assert(fs::exists(fs::path(im0_path)));
     assert(fs::exists(fs::path(im1_path)));
 
+    // pre read imag sizes so not to have to load the whole image to memory
     auto [w0, h0] = get_image_size(im0_path);
     auto [w1, h1] = get_image_size(im1_path);
 
-    cv::Mat im0 = cv::imread(im0_path, cv::IMREAD_GRAYSCALE);
+    cv::Mat im0, im1;
+    int max_im_width = 1060;
 
-    if(w0 > 1060 || h0 > 680 ){
-      cv::resize(im0, im0, cv::Size(1060, 680), cv::INTER_CUBIC);
-    }
+    if(w0 / max_im_width > 8)
+      im0 = cv::imread(im0_path, cv::IMREAD_REDUCED_GRAYSCALE_8);
+    else if(w0 / max_im_width > 4)
+      im0 = cv::imread(im0_path, cv::IMREAD_REDUCED_GRAYSCALE_4);
+    else if(w0 / max_im_width > 2)
+      im0 = cv::imread(im0_path, cv::IMREAD_REDUCED_GRAYSCALE_2);
+    else
+      im0 = cv::imread(im0_path, cv::IMREAD_GRAYSCALE);
 
-    cv::Mat im1 = cv::imread(im1_path, cv::IMREAD_GRAYSCALE);
-    if(w1 > 1060 || h1 > 680 ){
-      cv::resize(im1, im1, cv::Size(1060, 680), cv::INTER_CUBIC);
-    }
+    if(w1 / max_im_width > 8)
+      im1 = cv::imread(im1_path, cv::IMREAD_REDUCED_GRAYSCALE_8);
+    else if(w1 / max_im_width > 4)
+      im1 = cv::imread(im1_path, cv::IMREAD_REDUCED_GRAYSCALE_4);
+    else if(w1 / max_im_width > 2)
+      im1 = cv::imread(im1_path, cv::IMREAD_REDUCED_GRAYSCALE_2);
+    else
+      im1 = cv::imread(im1_path, cv::IMREAD_GRAYSCALE);
 
     w0 = im0.size().width;
     h0 = im0.size().height;
@@ -401,12 +412,15 @@ int main(int argc, char *argv[])
     h1 = im1.size().height;
 
     // display image
-    cv::Mat disp = cv::Mat::zeros(cv::max(h0, h1), w0 + w1, CV_8U);
+    cv::Mat disp_hom = cv::Mat::zeros(cv::max(h0, h1), w0 + w1, CV_8U);
+    cv::Mat disp_epi = cv::Mat::zeros(cv::max(h0, h1), w0 + w1, CV_8U);
 
-    im0.copyTo(cv::Mat(disp, cv::Rect(0, 0, w0, h0)));
-    im1.copyTo(cv::Mat(disp, cv::Rect(w0, 0, w1, h1)));
+    im0.copyTo(cv::Mat(disp_hom, cv::Rect(0, 0, w0, h0)));
+    im1.copyTo(cv::Mat(disp_hom, cv::Rect(w0, 0, w1, h1)));
 
-    cv::cvtColor(disp, disp, cv::COLOR_GRAY2BGR);
+    cv::cvtColor(disp_hom, disp_hom, cv::COLOR_GRAY2BGR);
+
+    disp_hom.copyTo(disp_epi);
 
     std::transform(kpt_type.begin(), kpt_type.end(), kpt_type.begin(), ::tolower);
 
@@ -449,7 +463,7 @@ int main(int argc, char *argv[])
     }
     aff = cv::AffineFeature::create(backend);
 
-    std::cout <<  aff->getDefaultName() << "with backend " << kpt_type << std::endl;
+    std::cout << aff->getDefaultName() << "with backend " << kpt_type << std::endl;
 
     std::vector<cv::KeyPoint> kp0, kp1;
     cv::Mat desc0, desc1;
@@ -476,7 +490,6 @@ int main(int argc, char *argv[])
     std::vector<float> distances_fund;
     auto t2 = std::chrono::high_resolution_clock::now();
     matcher->knnMatch(desc0, desc1, raw_matches, 2);
-    /* for(size_t i = 0; i < raw_matches.size(); ++i){ */
     for(const auto &cm: raw_matches){
       if(cm.size() == 2 && cm[0].distance < cm[1].distance * 0.75){
         p0.push_back(kp0[cm[0].queryIdx].pt);
@@ -492,7 +505,6 @@ int main(int argc, char *argv[])
 
     // find homography and decide inliers
 
-    auto t4 = std::chrono::high_resolution_clock::now();
 
     cv::Matx<double, 3, 3> hartleyNormp0, hartleyNormp1;
 
@@ -507,6 +519,8 @@ int main(int argc, char *argv[])
     std::vector<cv::Point2d> p1_fund = p1;
     std::vector<cv::Point2d> p0_fund_norm = p0_hom_norm;
     std::vector<cv::Point2d> p1_fund_norm = p1_hom_norm;
+
+    auto t4 = std::chrono::high_resolution_clock::now();
 
     cv::Mat Hnorm;
     std::vector<double> model_error_hom;
@@ -548,6 +562,8 @@ int main(int argc, char *argv[])
     cv::Mat H = hartleyNormp1.inv() * (Hnorm * hartleyNormp0);
     cv::Mat F = hartleyNormp1.t() * (Fnorm * hartleyNormp0);
 
+    auto t5 = std::chrono::high_resolution_clock::now();
+
     double Hmodel_error = 0.0;
     std::for_each(model_error_hom.begin(), model_error_hom.end(), [&Hmodel_error](double me){
         Hmodel_error += me;
@@ -577,8 +593,7 @@ int main(int argc, char *argv[])
     else
       std::cout << "fund selected \n";
 
-    auto t5 = std::chrono::high_resolution_clock::now();
-    auto delta45 = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2);
+    auto delta45 = std::chrono::duration_cast<std::chrono::milliseconds>(t5 - t4);
     std::cout << "Number of inliers: " << std::get<0>(ppairs).size() << std::endl;
     std::cout << "Number of inliers/matched: " << std::get<0>(ppairs).size() << "/" << p0.size() << std::endl;
     std::cout << "Time elapsed " << delta45.count()  << "ms" << std::endl;
@@ -598,7 +613,7 @@ int main(int argc, char *argv[])
     cv::perspectiveTransform(corners, corners_trans, H);
     cv::transform(corners_trans, corners_trans, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
     cv::Mat(corners_trans).convertTo(icorners, CV_32S);
-    /* cv::polylines(disp, icorners, true, cv::Scalar(255, 255, 255)); */
+    cv::polylines(disp_hom, icorners, true, cv::Scalar(255, 255, 255));
 
     if(!mat_in.empty()){
       cv::Mat H_gt(3,3, CV_32F);
@@ -607,36 +622,33 @@ int main(int argc, char *argv[])
       cv::perspectiveTransform(corners, corners_gt, H_gt);
       cv::transform(corners_gt, corners_gt, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
       cv::Mat(corners_gt).convertTo(icorners, CV_32S);
-      cv::polylines(disp, icorners, true, cv::Scalar(0, 255, 0));
+      cv::polylines(disp_hom, icorners, true, cv::Scalar(0, 255, 0));
     }
 
     // homography
-    /* std::vector<int> indices(std::get<0>(ppairs_hom).size()); */
-    /* cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING); */
-    /* int thickness = 2; */
-    /* for(auto &index : indices){ */
-    /*   const cv::Point2d &pi0 = std::get<0>(ppairs_hom)[index]; */
-    /*   const cv::Point2d &pi1 = std::get<1>(ppairs_hom)[index]; */
-    /*   auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f); */
-    /*   cv::circle(disp, pi0, thickness, cv::Scalar(0, 255, 0), -1); */
-    /*   cv::circle(disp, shifted_point, thickness, cv::Scalar(0, 255, 0), -1); */
-    /*   cv::line(disp, pi0, shifted_point, cv::Scalar(0, 255, 0)); */
-    /* } */
+    std::vector<int> indices(std::get<0>(ppairs_hom).size());
+    cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
+    int thickness = 2;
+    for(auto &index : indices){
+      const cv::Point2d &pi0 = std::get<0>(ppairs_hom)[index];
+      const cv::Point2d &pi1 = std::get<1>(ppairs_hom)[index];
+      auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f);
+      cv::circle(disp_hom, pi0, thickness, cv::Scalar(0, 255, 0), -1);
+      cv::circle(disp_hom, shifted_point, thickness, cv::Scalar(0, 255, 0), -1);
+      cv::line(disp_hom, pi0, shifted_point, cv::Scalar(0, 255, 0));
+    }
 
     // points for F and epipolar lines
 
-    std::vector<int> indices(std::get<0>(ppairs_fund).size());
-    cv::sortIdx(distances_fund, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
-    int thickness = 2;
+    std::vector<int> indices_fund(std::get<0>(ppairs_fund).size());
+    cv::sortIdx(distances_fund, indices_fund, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
     for(auto &index : indices){
       const cv::Point2d &pi0 = std::get<0>(ppairs_fund)[index];
       const cv::Point2d &pi1 = std::get<1>(ppairs_fund)[index];
       auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f);
 
-      cv::circle(disp, pi0, thickness, cv::Scalar(255, 0, 0), -1);
-      cv::circle(disp, shifted_point, thickness, cv::Scalar(255, 0, 0), -1);
-
-      /* cv::line(disp, pi0, shifted_point, cv::Scalar(0, 255, 0)); */
+      cv::circle(disp_epi, pi0, thickness, cv::Scalar(255, 0, 0), -1);
+      cv::circle(disp_epi, shifted_point, thickness, cv::Scalar(255, 0, 0), -1);
     }
 
     std::vector<cv::Point3d> lines0(std::get<1>(ppairs_fund).size());
@@ -656,7 +668,7 @@ int main(int argc, char *argv[])
 
       cv::Mat(eCorners).convertTo(ieCorners, CV_32S);
 
-      cv::polylines(disp, ieCorners, true, cv::Scalar(0, 255, 0));
+      cv::polylines(disp_epi, ieCorners, true, cv::Scalar(0, 255, 0));
     }
 
     for(auto &line: lines1){
@@ -664,26 +676,39 @@ int main(int argc, char *argv[])
       std::vector<cv::Point2i> ieCorners;
 
       eCorners[0] = {0, -line.z / line.y };
-      eCorners[1] = {(float)im0.size().width, 
-                     (((-line.x * (float)im0.size().width)) - line.z ) / line.y};
+      eCorners[1] = {(float)im1.size().width, 
+                     (((-line.x * (float)im1.size().width)) - line.z ) / line.y};
 
 
       cv::transform(eCorners, eCorners, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
       cv::Mat(eCorners).convertTo(ieCorners, CV_32S);
 
-      cv::polylines(disp, ieCorners, true, cv::Scalar(0, 255, 0));
+      cv::polylines(disp_epi, ieCorners, true, cv::Scalar(0, 255, 0));
     }
 
     write_model_matrix(mat_out, H);
 
-    cv::imshow("affine find_obj", disp);
+    cv::imshow("epipolar lines", disp_epi);
 
     std::cout << "Press q to quit window\n";
+    std::cout << "Press h to vis hom match\n";
+    std::cout << "Press e to vis epipolar lines\n";
+
     std::chrono::duration<double, std::milli> wait_time(20);
 
-    while(cv::pollKey() != 'q'){
+    int k = ' ';
+    while(k != 'q'){
+      if(k == 'h')
+        cv::imshow("hom match", disp_hom);
+      else if(k == 'e')
+        cv::imshow("epipolar lines", disp_epi);
+      /* else if(k == 'r') */
+      /*   cv::imshow("rectified result", disp_rect); */
+
       std::this_thread::sleep_for(wait_time);
+      k = cv::pollKey();
     }
+
 
   }
   catch (const std::exception &e) {
