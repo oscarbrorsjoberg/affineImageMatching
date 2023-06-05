@@ -20,29 +20,55 @@ endif()
 set(build_flags
     "-std=c++17"
     "-lstdc++fs" # filesystem
-    # "Wall"
-    # "Wextra"
     "-pedantic"
     "-O0"
     "-g"
     )
 
+
+
+## find_model
+add_library(
+    find_model
+    utils/find_model.cpp
+
+)
+
+target_compile_options(find_model
+  INTERFACE
+  ${build_flags}
+)
+
+target_link_libraries(find_model
+  PRIVATE
+  ${OpenCV_LIBS}
+)
+target_include_directories(find_model
+  PRIVATE
+  utils/
+)
+
+
+
+## main
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    )
+)
 
 target_compile_options(${PROJECT_NAME}
   PRIVATE
-	${build_flags}
+  ${build_flags}
 )
 
 target_include_directories(${PROJECT_NAME}
   PRIVATE
   ${EXIV2_INCLUDES}
-    )
+  utils/
+)
 
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
-	${OpenCV_LIBS}
+  ${OpenCV_LIBS}
   exiv2      
-    )
+  find_models
+)
