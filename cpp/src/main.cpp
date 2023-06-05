@@ -21,147 +21,11 @@
 #include <thread>
 
 #include "find_model.hpp" // find homography and fundamental
+#include "genIO.hpp" // io args and write matrices
 
 namespace fs = std::filesystem;
 
-static std::string exe_name(){
-  std::string out;
-  std::ifstream("/proc/self/comm") >> out;
-  return out;
-}
 
-/* -- inputArgs struct */
-class inputArgBase{
-  protected:
-    bool updated_;
-  public:
-    virtual ~inputArgBase() = default;
-
-    inputArgBase(const std::string &name, const std::string &short_name, 
-        const std::string &description, bool required = false):
-      name_(name),
-      short_name_(short_name),
-      description_(description),
-      required_(required),
-      updated_(false)
-  {
-  }
-    virtual void set_value_from_string(const std::string &inpt) = 0;
-    virtual std::string value_str() = 0;
-    virtual bool value_is_set() = 0;
-
-    bool is_updated(){
-      return updated_;
-    }
-
-    bool is_required(){
-      return required_;
-    }
-
-    bool required_;
-    std::string name_;
-    std::string short_name_;
-    std::string description_;
-};
-
-template <typename T>
-class inputArg : public inputArgBase {
-
-  private:
-    T *value_;
-
-  public:
-    inputArg(const std::string &name, const std::string &short_name, 
-        const std::string &description, T* default_value, bool required = false):
-      inputArgBase(name, short_name, description, required),
-      value_(default_value)
-  {
-  }
-
-    T get_value(){return *value_;}
-    void set_value(T value){*value_ = value;}
-    bool value_is_set() {return value_ != nullptr;}
-
-    std::string value_str(){
-      std::ostringstream os;
-      if(value_){
-        if(os << *value_){
-          return os.str();
-        }
-        else{
-          throw std::runtime_error("Unable to cast " + name_ + " to string");
-        }
-      }
-      else{
-        return "Empty";
-      }
-    }
-
-    void set_value_from_string(const std::string &inpt){
-      std::istringstream iss(inpt);
-      T value;
-      if(iss >> value){
-        set_value(value);
-        updated_ = true;
-      }
-      else{
-          throw std::runtime_error("Unable to convert " + name_  + " <" + typeid(value).name() + "!=" + typeid(value_).name() + ">");  
-      }
-    }
-};
-
-
-
-class appInputOpts {
-  public:
-    std::vector<std::unique_ptr<inputArgBase>> pargs;
-
-    template<typename T>
-      void add_argument(const std::string &long_name, const std::string &short_name,
-          const std::string &description, T *var, bool required){
-        pargs.push_back(std::make_unique<inputArg<T>>( 
-              long_name, short_name, description, 
-              var, required));
-      }
-
-    void help(){
-      std::cout << " This is " << exe_name() << " a simple copy of OpenCVs asift. " << std::endl;
-      std::cout << " Input parameters:" << std::endl;
-      for(auto &parg: pargs){
-        std::cout << "\t" << parg->name_ << " " << parg->short_name_ << " | " << parg->description_  << " | " ;
-        std::cout << parg->value_str() << "\n";
-      }
-    }
-
-    bool parse_args(int argc, char *args[]){
-      if(argc == 1 || ((argc - 1) % 2) != 0){
-        return false;
-      }
-      for(int i = 1; i < argc; i+=2){
-        std::string current_arg_key{args[i]};
-        std::string current_arg_value{args[i + 1]};
-        for(auto &parg: pargs){
-          if(current_arg_key == parg->name_ || current_arg_key == parg->short_name_){
-            if(!parg->is_updated()){
-              parg->set_value_from_string(current_arg_value);
-            }
-            else{
-              help();
-              throw std::runtime_error(current_arg_key + " is already set!");
-            }
-          }
-        }
-      }
-
-      bool out = true;
-      for(auto &parg: pargs)
-        out &= parg->is_required() ? parg->is_updated(): true;
-
-      return out;
-    }
-};
-
-/* ---- input args end -- */ 
 
 static std::tuple<int, int> get_image_size(const std::string &im_path){
   int imsizes[] = {-1, -1};
@@ -203,53 +67,6 @@ static std::tuple<int, int> get_image_size(const std::string &im_path){
   return  std::make_tuple(imsizes[0], imsizes[1]);
 }
 
-static void write_model_matrix(const std::string &path,
-                               const cv::Mat &model_matrix)
-{
-  assert(model_matrix.size().width == 3 && 
-         model_matrix.size().height == 3);
-
-  std::ofstream outfile(path);
-
-  outfile << 
-   model_matrix.at<float>(0,0) << " " <<
-   model_matrix.at<float>(0,1) << " " <<
-   model_matrix.at<float>(0,2) << "\n" <<
-
-   model_matrix.at<float>(1,0) << " " <<
-   model_matrix.at<float>(1,1) << " " <<
-   model_matrix.at<float>(1,2) << "\n" <<
-
-   model_matrix.at<float>(2,0) << " " <<
-   model_matrix.at<float>(2,1) << " " <<
-   model_matrix.at<float>(2,2) << "\n";
-
-  outfile.close();
-}
-
-static void read_model_matrix(const std::string &path,
-                              cv::Mat &model_matrix)
-{
-  assert(model_matrix.size().width == 3 && 
-         model_matrix.size().height == 3);
-
-  std::ifstream infile(path);
-
-  infile >> model_matrix.at<float>(0,0) >> 
-   model_matrix.at<float>(0,1) >> 
-   model_matrix.at<float>(0,2) >> 
-
-   model_matrix.at<float>(1,0) >> 
-   model_matrix.at<float>(1,1) >> 
-   model_matrix.at<float>(1,2) >> 
-
-   model_matrix.at<float>(2,0) >> 
-   model_matrix.at<float>(2,1) >> 
-   model_matrix.at<float>(2,2); 
-
-  infile.close();
-}
-
 
 int main(int argc, char *argv[])
 {
@@ -262,7 +79,8 @@ int main(int argc, char *argv[])
     bool vis = true;
 
 
-    appInputOpts opts;
+    appInputOpts opts("viewChange");
+
     opts.add_argument("--image0",     "-im0",  "path to first image", &im0_path, true);
     opts.add_argument("--image1",     "-im1",  "path to second image", &im1_path, true);
     opts.add_argument("--keypoint",   "-k",    "kpt type", &kpt_type, false);

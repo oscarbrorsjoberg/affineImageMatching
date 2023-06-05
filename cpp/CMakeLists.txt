@@ -48,6 +48,25 @@ target_include_directories(find_model
   utils/
 )
 
+## genIO
+add_library(
+    genIO
+    utils/genIO.cpp
+)
+
+target_compile_options(genIO
+  INTERFACE
+  ${build_flags}
+)
+
+target_link_libraries(genIO
+  PRIVATE
+  ${OpenCV_LIBS}
+)
+target_include_directories(genIO
+  PRIVATE
+  utils/
+)
 
 
 ## main
@@ -70,5 +89,6 @@ target_link_libraries(${PROJECT_NAME}
   PRIVATE
   ${OpenCV_LIBS}
   exiv2      
-  find_models
+  find_model
+  genIO
 )
