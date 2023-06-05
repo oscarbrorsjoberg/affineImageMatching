@@ -198,7 +198,6 @@ static std::tuple<int, int> get_image_size(const std::string &im_path){
     imsizes[0] = tim->pixelWidth();
     imsizes[1] = tim->pixelHeight();
   }
-
   return  std::make_tuple(imsizes[0], imsizes[1]);
 }
 
@@ -249,26 +248,33 @@ static void read_model_matrix(const std::string &path,
   infile.close();
 }
 
+ double ThreshOutlHom = 5.99; // from orb-slam
+ double ThreshOutlFund = 3.84; // from orb-slam
 
-void calcHomography(const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1, 
-                      std::vector<std::tuple<cv::Point2f, cv::Point2f>> &inliers,
-                      std::vector<float> &kptdistances,
-                      std::vector<double> &model_distance,
-                      cv::Mat &out
-                      ){
+static void calcHomography(const std::vector<cv::Point2d> &p0n, const std::vector<cv::Point2d> &p1n, 
+                          const std::vector<cv::Point2d> &p0, const std::vector<cv::Point2d> &p1,
+                          std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> &inliers,
+                          std::vector<float> &kptdistances,
+                          std::vector<double> &model_distance,
+                          cv::Mat &out
+                          ){
 
     std::vector<uchar> status;
-    out = cv::findHomography(p0, p1, status, cv::RANSAC);
+    out = cv::findHomography(p0n, p1n, status, cv::RANSAC, ThreshOutlHom);
     cv::Mat outInv = out.inv(); 
 
     int inliers_cnt = 0;
     for(size_t i = 0; i < status.size(); i++){
       if(status[i]){
-        inliers.push_back(std::make_tuple(p0[i], p1[i]));
+
+        std::get<0>(inliers).push_back(p0[i]); 
+        std::get<1>(inliers).push_back(p1[i]); 
+
         kptdistances[inliers_cnt++] = kptdistances[i];
 
-        cv::Mat p0_{(double)p0[i].x, (double)p0[i].y, 1.0};
-        cv::Mat p1_{(double)p1[i].x, (double)p1[i].y, 1.0};
+        // to homogenous
+        cv::Mat p0_{(double)p0n[i].x, (double)p0n[i].y, 1.0};
+        cv::Mat p1_{(double)p1n[i].x, (double)p1n[i].y, 1.0};
 
         cv::Mat phat01, phat10;
         cv::gemm(out, p0_, 1.0, cv::Mat(), 0.0, phat01);
@@ -282,46 +288,67 @@ void calcHomography(const std::vector<cv::Point2f> &p0, const std::vector<cv::Po
 
         cv::Mat d0{diff01.at<double>(0), diff01.at<double>(1)};
         cv::Mat d1{diff01.at<double>(0), diff01.at<double>(1)};
-
+       
         model_distance.push_back((cv::norm(d0) +
                                   cv::norm(d1)) / 2);
       }
     }
 }
 
-cv::Mat calcFundamental(const std::vector<cv::Point2f> &p0, const std::vector<cv::Point2f> &p1, 
-                      std::vector<std::tuple<cv::Point2f, cv::Point2f>> &inliers,
-                      std::vector<float> &kptdistances,
-                      std::vector<double> &model_distance,
-                     cv::Mat &out 
-                      ){
+static void calcFundamental(const std::vector<cv::Point2d> &p0n, const std::vector<cv::Point2d> &p1n, 
+                            const std::vector<cv::Point2d> &p0, const std::vector<cv::Point2d> &p1,
+                            std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> &inliers,
+                            std::vector<float> &kptdistances,
+                            std::vector<double> &model_distance,
+                            cv::Mat &out 
+                            ){
 
     std::vector<uchar> status;
-    out = cv::findFundamentalMat(p0, p1, status, cv::RANSAC);
+    out = cv::findFundamentalMat(p0n, p1n, status, cv::FM_RANSAC + cv::FM_8POINT, ThreshOutlFund);
 
     int inliers_cnt = 0;
     for(size_t i = 0; i < status.size(); i++){
       if(status[i]){
-        inliers.push_back(std::make_tuple(p0[i], p1[i]));
+
+        std::get<0>(inliers).push_back(p0[i]); 
+        std::get<1>(inliers).push_back(p1[i]); 
+
         kptdistances[inliers_cnt++] = kptdistances[i];
+        cv::Mat p0_{(double)p0n[i].x, (double)p0n[i].y, 1.0};
+        cv::Mat p1_{(double)p1n[i].x, (double)p1n[i].y, 1.0};
 
-/*         cv::Mat p0_{(double)p0[i].x, (double)p0[i].y, 1.0}; */
-/*         cv::Mat p1_{(double)p1[i].x, (double)p1[i].y, 1.0}; */
-
-/*         cv::Mat phat01, phat10; */
-/*         cv::gemm(out, p0_, 1.0, cv::Mat(), 0.0, phat01); */
-/*         cv::gemm(outInv, p1_, 1.0, cv::Mat(), 0.0, phat10); */
-
-/*         phat01 = phat01 / phat01.at<double>(0,2); */
-/*         phat10 = phat10 / phat10.at<double>(0,2); */
-/*         std::cout << phat01 << std::endl; */
-
-/*         auto diff01 = p1_ - phat01; */
-/*         auto diff10 = p0_ - phat10; */
-
-        model_distance.push_back((cv::norm(diff01) + cv::norm(diff10)) / 2);
+        model_distance.push_back(cv::sampsonDistance(p0_, p1_, out));
       }
     }
+}
+
+
+static std::vector<cv::Point2d> hartley_normalization(const std::vector<cv::Point2d> &input, cv::Matx<double, 3, 3> &out_trans)
+{
+  std::vector<cv::Point3d> homo(input.size());
+  std::vector<cv::Point2d> out(input.size());
+
+
+  double centroid_x = 0.0;
+  double centroid_y = 0.0;
+  int idx = 0;
+  std::for_each(input.begin(), input.end(), [&centroid_x, &centroid_y, &homo, &idx](auto &pnt){
+      centroid_x += pnt.x;
+      centroid_y += pnt.y;
+      homo[idx++] = {pnt.x, pnt.y, 1.0};
+    });
+
+  centroid_x /= input.size();
+  centroid_y /= input.size();
+  out_trans = cv::Matx33d(1.0 / std::sqrt(2), 0.0,  -centroid_x,
+                          0.0, 1.0 / std::sqrt(2) , -centroid_y,
+                          0.0, 0.0, 1.0
+                                      );
+
+  cv::transform(homo, homo, out_trans);
+
+  cv::convertPointsFromHomogeneous(homo, out);
+
   return out;
 }
 
@@ -335,14 +362,15 @@ int main(int argc, char *argv[])
     bool use_flann = false;
     bool vis = true;
 
+
     appInputOpts opts;
-    opts.add_argument("--image0", "-im0", "path to first image", &im0_path, true);
-    opts.add_argument("--image1", "-im1", "path to second image", &im1_path, true);
-    opts.add_argument("--keypoint", "-k", "kpt type", &kpt_type, false);
-    opts.add_argument("--flann", "-f",    "if using flann or brute force matching", &use_flann, false);
-    opts.add_argument("--vis", "-v",    "visualize the result of matching", &vis, false);
-    opts.add_argument("--matrix_out", "-mo",    "(F/H)Matrix output path", &mat_out, false);
-    opts.add_argument("--matrix_in", "-mi",    "(F/H)Matrix input path", &mat_in, false);
+    opts.add_argument("--image0",     "-im0",  "path to first image", &im0_path, true);
+    opts.add_argument("--image1",     "-im1",  "path to second image", &im1_path, true);
+    opts.add_argument("--keypoint",   "-k",    "kpt type", &kpt_type, false);
+    opts.add_argument("--flann",      "-f",    "if using flann or brute force matching", &use_flann, false);
+    opts.add_argument("--vis",        "-v",    "visualize the result of matching", &vis, false);
+    opts.add_argument("--matrix_out", "-mo",   "(F/H)Matrix output path", &mat_out, false);
+    opts.add_argument("--matrix_in",  "-mi",   "(F/H)Matrix input path", &mat_in, false);
 
     if(!opts.parse_args(argc, argv)){
       opts.help();
@@ -427,8 +455,9 @@ int main(int argc, char *argv[])
 
     // point matching
     std::vector<std::vector<cv::DMatch>> raw_matches;
-    std::vector<cv::Point2f> p0, p1;
+    std::vector<cv::Point2d> p0, p1;
     std::vector<float> distances;
+    std::vector<float> distances_fund;
     auto t2 = std::chrono::high_resolution_clock::now();
     matcher->knnMatch(desc0, desc1, raw_matches, 2);
     /* for(size_t i = 0; i < raw_matches.size(); ++i){ */
@@ -437,6 +466,7 @@ int main(int argc, char *argv[])
         p0.push_back(kp0[cm[0].queryIdx].pt);
         p1.push_back(kp1[cm[0].trainIdx].pt);
         distances.push_back(cm[0].distance);
+        distances_fund.push_back(cm[0].distance);
       }
     }
     auto t3 = std::chrono::high_resolution_clock::now();
@@ -446,66 +476,106 @@ int main(int argc, char *argv[])
 
     // find homography and decide inliers
     /* std::vector<uchar> status; */
-    std::vector<std::tuple<cv::Point2f, cv::Point2f>> ppairs;
-    std::vector<double> model_error;
-
 
     auto t4 = std::chrono::high_resolution_clock::now();
 
-    cv::Mat H;
+    cv::Matx<double, 3, 3> hartleyNormp0, hartleyNormp1;
+
+    std::vector<cv::Point2d> p0_hom = p0;
+    std::vector<cv::Point2d> p1_hom = p1;
+
+    std::vector<cv::Point2d> p0_hom_norm = hartley_normalization(p0, hartleyNormp0);
+    std::vector<cv::Point2d> p1_hom_norm = hartley_normalization(p1, hartleyNormp1);
+
+    // this is probably not needed I need to verify that reading point2f from two different threads are threadsafe
+    std::vector<cv::Point2d> p0_fund = p0;
+    std::vector<cv::Point2d> p1_fund = p1;
+    std::vector<cv::Point2d> p0_fund_norm = p0_hom_norm;
+    std::vector<cv::Point2d> p1_fund_norm = p1_hom_norm;
+
+    cv::Mat Hnorm;
+    std::vector<double> model_error_hom;
+    std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_hom = std::make_tuple(std::vector<cv::Point2d>{},
+                                                                                                std::vector<cv::Point2d>{});
     std::thread homThread(calcHomography, 
-                          std::ref(p0), 
-                          std::ref(p1), 
-                          std::ref(ppairs), 
+                          std::ref(p0_hom_norm), 
+                          std::ref(p1_hom_norm), 
+                          std::ref(p0_hom), 
+                          std::ref(p1_hom), 
+                          std::ref(ppairs_hom), 
                           std::ref(distances),
-                          std::ref(model_error),
-                          std::ref(H)
+                          std::ref(model_error_hom),
+                          std::ref(Hnorm)
                           );
 
 
 
-
-    cv::Mat F;
+    cv::Mat Fnorm;
     std::vector<double> model_error_fund;
+    std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_fund = std::make_tuple(std::vector<cv::Point2d>{},
+                                                                                                std::vector<cv::Point2d>{});
     std::thread fundThread(calcFundamental, 
-                          std::ref(p0), 
-                          std::ref(p1), 
-                          std::ref(ppairs), 
+                          std::ref(p0_fund_norm), 
+                          std::ref(p1_fund_norm), 
+                          std::ref(p0_fund), 
+                          std::ref(p1_fund), 
+                          std::ref(ppairs_fund), 
+                          std::ref(distances_fund), 
                           std::ref(model_error_fund),
-                          std::ref(F)
+                          std::ref(Fnorm)
                           );
+
 
 
     homThread.join();
     fundThread.join();
 
+    cv::Mat H = hartleyNormp1.inv() * (Hnorm * hartleyNormp0);
+    cv::Mat F = hartleyNormp1.t() * (Fnorm * hartleyNormp0);
+
     double Hmodel_error = 0.0;
-    std::for_each(model_error.begin(), model_error.end(), [&Hmodel_error](double me){
+    std::for_each(model_error_hom.begin(), model_error_hom.end(), [&Hmodel_error](double me){
         Hmodel_error += me;
         });
-    Hmodel_error /= model_error.size();
+    Hmodel_error /= model_error_hom.size();
 
-    /* double Hmodel_error = 0.0; */
-    /* std::for_each(model_error.begin(), model_error.end(), [&Hmodel_error](double me){ */
-    /*     Hmodel_error += me; */
-    /*     }); */
-    /* Hmodel_error /= model_error.size(); */
+    double Fmodel_error = 0.0;
+    std::for_each(model_error_fund.begin(), model_error_fund.end(), [&Fmodel_error](double me){
+        Fmodel_error += me;
+        });
+    Fmodel_error /= model_error_fund.size();
+
+
+    double Rh = (Hmodel_error / (Fmodel_error + Hmodel_error));
+    std::cout << "Error Sh " << Hmodel_error << std::endl;
+    std::cout << "Homography inliers " << std::get<0>(ppairs_hom).size() << std::endl;
+
+    std::cout << "Error Sf " << Fmodel_error << std::endl;
+    std::cout << "Fundamental inliers " << std::get<0>(ppairs_fund).size() << std::endl;
+
+    std::cout << "Error Rh " << Rh << std::endl;
+    auto &ppairs = Rh  > 0.45 ? ppairs_hom : ppairs_fund; 
+    bool homSelected = Rh  > 0.45;
+
+    if(homSelected)
+      std::cout << "hom selected \n";
+    else
+      std::cout << "fund selected \n";
 
     auto t5 = std::chrono::high_resolution_clock::now();
     auto delta45 = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2);
-    std::cout << "Number of inliers: " << ppairs.size() << std::endl;
-    std::cout << "Number of inliers/matched: " << ppairs.size() << "/" << p0.size() << std::endl;
+    std::cout << "Number of inliers: " << std::get<0>(ppairs).size() << std::endl;
+    std::cout << "Number of inliers/matched: " << std::get<0>(ppairs).size() << "/" << p0.size() << std::endl;
     std::cout << "Time elapsed " << delta45.count()  << "ms" << std::endl;
     std::cout << "Model error " << Hmodel_error << "pix" << std::endl;
 
-    distances.resize(ppairs.size());
+    distances.resize(std::get<0>(ppairs).size());
 
     // visualizing the mapping
     std::vector<cv::Point2f> corners(4);
     std::vector<cv::Point2f> corners_trans(4);
-    corners[0] = cv::Point2f(0.f, 0.f);
-    corners[1] = cv::Point2f((float)w0, 0.f);
-    corners[2] = cv::Point2f((float)w0, (float)h0);
+    corners[0] = cv::Point2f(0.f, 0.f); 
+    corners[1] = cv::Point2f((float)w0, 0.f); corners[2] = cv::Point2f((float)w0, (float)h0);
     corners[3] = cv::Point2f(0.f, (float)h0);
 
     std::vector<cv::Point2i> icorners;
@@ -524,17 +594,52 @@ int main(int argc, char *argv[])
       cv::polylines(disp, icorners, true, cv::Scalar(0, 255, 0));
     }
 
-    std::vector<int> indices(ppairs.size());
+    // homography
+    std::vector<int> indices(std::get<0>(ppairs_hom).size());
     cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
     int thickness = 2;
     for(auto &index : indices){
-      const cv::Point2f &pi1 = std::get<0>(ppairs[index]);
-      const cv::Point2f &pi2 = std::get<1>(ppairs[index]);
-      auto shifted_point = pi2 + cv::Point2f((float)w0, 0.f);
-      cv::circle(disp, pi1, thickness, cv::Scalar(0, 255, 0), -1);
+      const cv::Point2d &pi0 = std::get<0>(ppairs_hom)[index];
+      const cv::Point2d &pi1 = std::get<1>(ppairs_hom)[index];
+      auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f);
+      cv::circle(disp, pi0, thickness, cv::Scalar(0, 255, 0), -1);
       cv::circle(disp, shifted_point, thickness, cv::Scalar(0, 255, 0), -1);
-      cv::line(disp, pi1, shifted_point, cv::Scalar(0, 255, 0));
+      cv::line(disp, pi0, shifted_point, cv::Scalar(0, 255, 0));
     }
+
+    // points for F and epipolar lines
+
+    /* std::vector<int> indices(std::get<0>(ppairs_fund).size()); */
+    /* cv::sortIdx(distances_fund, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING); */
+    /* int thickness = 2; */
+    /* for(auto &index : indices){ */
+    /*   const cv::Point2d &pi0 = std::get<0>(ppairs_fund)[index]; */
+    /*   const cv::Point2d &pi1 = std::get<1>(ppairs_fund)[index]; */
+    /*   auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f); */
+    /*   cv::circle(disp, pi0, thickness, cv::Scalar(0, 255, 0), -1); */
+    /*   cv::circle(disp, shifted_point, thickness, cv::Scalar(0, 255, 0), -1); */
+    /*   /1* cv::line(disp, pi0, shifted_point, cv::Scalar(0, 255, 0)); *1/ */
+    /* } */
+
+    /* std::vector<cv::Point3d> lines0(std::get<1>(ppairs_fund).size()); */
+    /* std::vector<cv::Point3d> lines1(std::get<0>(ppairs_fund).size()); */
+    
+    /* cv::computeCorrespondEpilines(std::get<1>(ppairs_fund), 1, F, lines0); */
+    /* cv::computeCorrespondEpilines(std::get<0>(ppairs_fund), 0, F, lines1); */
+
+    /* for(auto &line: lines0){ */
+    /*   std::vector<cv::Point2d> eCorners(2); */
+    /*   std::vector<cv::Point2i> ieCorners; */
+
+    /*   eCorners[0] = {0, -line.z / line.y }; */
+    /*   eCorners[1] = {(float)im0.size().width, */ 
+    /*                  (((-line.x * (float)im0.size().width)) - line.z ) / line.y}; */
+
+
+    /*   cv::Mat(eCorners).convertTo(ieCorners, CV_32S); */
+
+    /*   cv::polylines(disp, ieCorners, true, cv::Scalar(0, 255, 0)); */
+    /* } */
 
     write_model_matrix(mat_out, H);
 
