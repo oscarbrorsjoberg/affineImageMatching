@@ -12,14 +12,14 @@ constexpr double ThreshOutlFund = 3.84; // from orb-slam
  *
  * */
 void calcHomography(const std::vector<cv::Point2d> &p0n, 
-                          const std::vector<cv::Point2d> &p1n, 
-                          const std::vector<cv::Point2d> &p0, 
-                          const std::vector<cv::Point2d> &p1,
-                          std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> &inliers,
-                          std::vector<float> &kptdistances,
-                          std::vector<double> &model_distance,
-                          cv::Mat &out
-                          ){
+                    const std::vector<cv::Point2d> &p1n, 
+                    const std::vector<cv::Point2d> &p0, 
+                    const std::vector<cv::Point2d> &p1,
+                    std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> &inliers,
+                    std::vector<float> &kptdistances,
+                    std::vector<double> &model_distance,
+                    cv::Mat &out
+                    ){
 
     std::vector<uchar> status;
     out = cv::findHomography(p0n, p1n, status, cv::RANSAC, ThreshOutlHom);
@@ -63,12 +63,12 @@ void calcHomography(const std::vector<cv::Point2d> &p0n,
  * */
 
 void calcFundamental(const std::vector<cv::Point2d> &p0n, const std::vector<cv::Point2d> &p1n, 
-                            const std::vector<cv::Point2d> &p0, const std::vector<cv::Point2d> &p1,
-                            std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> &inliers,
-                            std::vector<float> &kptdistances,
-                            std::vector<double> &model_distance,
-                            cv::Mat &out 
-                            ){
+                     const std::vector<cv::Point2d> &p0, const std::vector<cv::Point2d> &p1,
+                     std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> &inliers,
+                     std::vector<float> &kptdistances,
+                     std::vector<double> &model_distance,
+                     cv::Mat &out 
+                     ){
 
     std::vector<uchar> status;
     out = cv::findFundamentalMat(p0n, p1n, status, cv::FM_RANSAC + cv::FM_8POINT, ThreshOutlFund);

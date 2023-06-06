@@ -222,7 +222,7 @@ int main(int argc, char *argv[])
     // point matching
     std::vector<std::vector<cv::DMatch>> raw_matches;
     std::vector<cv::Point2d> p0, p1;
-    std::vector<float> distances;
+    std::vector<float> distances_hom;
     std::vector<float> distances_fund;
     auto t2 = std::chrono::high_resolution_clock::now();
     matcher->knnMatch(desc0, desc1, raw_matches, 2);
@@ -230,7 +230,7 @@ int main(int argc, char *argv[])
       if(cm.size() == 2 && cm[0].distance < cm[1].distance * 0.75){
         p0.push_back(kp0[cm[0].queryIdx].pt);
         p1.push_back(kp1[cm[0].trainIdx].pt);
-        distances.push_back(cm[0].distance);
+        distances_hom.push_back(cm[0].distance);
         distances_fund.push_back(cm[0].distance);
       }
     }
@@ -243,18 +243,9 @@ int main(int argc, char *argv[])
     // Normalization shouldn't be considered optional
     cv::Matx<double, 3, 3> hartleyNormp0, hartleyNormp1;
 
-    std::vector<cv::Point2d> p0_hom = p0;
-    std::vector<cv::Point2d> p1_hom = p1;
+    std::vector<cv::Point2d> p0_norm = hartleyNorm(p0, hartleyNormp0);
+    std::vector<cv::Point2d> p1_norm = hartleyNorm(p1, hartleyNormp1);
 
-    std::vector<cv::Point2d> p0_hom_norm = hartleyNorm(p0, hartleyNormp0);
-    std::vector<cv::Point2d> p1_hom_norm = hartleyNorm(p1, hartleyNormp1);
-
-
-    // this is probably not needed I need to verify that reading point2f from two different threads are threadsafe
-    std::vector<cv::Point2d> p0_fund = p0;
-    std::vector<cv::Point2d> p1_fund = p1;
-    std::vector<cv::Point2d> p0_fund_norm = p0_hom_norm;
-    std::vector<cv::Point2d> p1_fund_norm = p1_hom_norm;
 
     auto t4 = std::chrono::high_resolution_clock::now();
 
@@ -263,12 +254,12 @@ int main(int argc, char *argv[])
     std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_hom = std::make_tuple(std::vector<cv::Point2d>{},
                                                                                                 std::vector<cv::Point2d>{});
     std::thread homThread(calcHomography, 
-                          std::ref(p0_hom_norm), 
-                          std::ref(p1_hom_norm), 
-                          std::ref(p0_hom), 
-                          std::ref(p1_hom), 
+                          std::ref(p0_norm), 
+                          std::ref(p1_norm), 
+                          std::ref(p0), 
+                          std::ref(p1), 
                           std::ref(ppairs_hom), 
-                          std::ref(distances),
+                          std::ref(distances_hom),
                           std::ref(model_error_hom),
                           std::ref(Hnorm)
                           );
@@ -280,10 +271,10 @@ int main(int argc, char *argv[])
     std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_fund = std::make_tuple(std::vector<cv::Point2d>{},
                                                                                                 std::vector<cv::Point2d>{});
     std::thread fundThread(calcFundamental, 
-                          std::ref(p0_fund_norm), 
-                          std::ref(p1_fund_norm), 
-                          std::ref(p0_fund), 
-                          std::ref(p1_fund), 
+                          std::ref(p0_norm), 
+                          std::ref(p1_norm), 
+                          std::ref(p0), 
+                          std::ref(p1), 
                           std::ref(ppairs_fund), 
                           std::ref(distances_fund), 
                           std::ref(model_error_fund),
@@ -301,24 +292,40 @@ int main(int argc, char *argv[])
     auto t5 = std::chrono::high_resolution_clock::now();
 
     double Hmodel_error = 0.0;
-    std::for_each(model_error_hom.begin(), model_error_hom.end(), [&Hmodel_error](double me){
+    double Hlargest_error = -1.0;
+    std::for_each(model_error_hom.begin(), model_error_hom.end(), [&Hmodel_error, &Hlargest_error](double me){
         Hmodel_error += me;
+        Hlargest_error = Hlargest_error > me ? Hlargest_error : me;
         });
     Hmodel_error /= model_error_hom.size();
 
     double Fmodel_error = 0.0;
-    std::for_each(model_error_fund.begin(), model_error_fund.end(), [&Fmodel_error](double me){
+    double Flargest_error = -1.0;
+    std::for_each(model_error_fund.begin(), model_error_fund.end(), [&Fmodel_error, &Flargest_error](double me){
         Fmodel_error += me;
+        Flargest_error = Flargest_error > me ? Flargest_error : me;
         });
     Fmodel_error /= model_error_fund.size();
 
 
     double Rh = (Hmodel_error / (Fmodel_error + Hmodel_error));
     std::cout << "Error Sh " << Hmodel_error << std::endl;
+    std::cout << "Largest error Sh " << Hlargest_error << std::endl;
     std::cout << "Homography inliers " << std::get<0>(ppairs_hom).size() << std::endl;
 
     std::cout << "Error Sf " << Fmodel_error << std::endl;
+    std::cout << "Largest error Sf " << Flargest_error << std::endl;
     std::cout << "Fundamental inliers " << std::get<0>(ppairs_fund).size() << std::endl;
+
+    /* std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_fund2 = std::make_tuple(std::vector<cv::Point2d>{}, */
+    /*                                                                                             std::vector<cv::Point2d>{}); */
+
+    /* cv::correctMatches(F, std::get<0>(ppairs_fund), std::get<1>(ppairs_fund), std::get<0>(ppairs_fund2), std::get<1>(ppairs_fund2)); */
+
+    /* std::cout << "Fundamental inliers " << std::get<0>(ppairs_fund2).size() << std::endl; */
+
+
+
 
     std::cout << "Error Rh " << Rh << std::endl;
     auto &ppairs = Rh  > 0.45 ? ppairs_hom : ppairs_fund; 
@@ -331,11 +338,12 @@ int main(int argc, char *argv[])
 
     auto delta45 = std::chrono::duration_cast<std::chrono::milliseconds>(t5 - t4);
     std::cout << "Number of inliers: " << std::get<0>(ppairs).size() << std::endl;
-    std::cout << "Number of inliers/matched: " << std::get<0>(ppairs).size() << "/" << p0.size() << std::endl;
+    std::cout << "Number of inliers/matched: " << std::get<0>(ppairs).size() << "/" 
+      << p0.size() << std::endl;
     std::cout << "Time elapsed " << delta45.count()  << "ms" << std::endl;
     std::cout << "Model error " << Hmodel_error << "pix" << std::endl;
 
-    distances.resize(std::get<0>(ppairs_hom).size());
+    distances_hom.resize(std::get<0>(ppairs_hom).size());
     distances_fund.resize(std::get<0>(ppairs_fund).size());
 
     // visualizing the homography mapping
@@ -363,7 +371,7 @@ int main(int argc, char *argv[])
 
     // homography
     std::vector<int> indices(std::get<0>(ppairs_hom).size());
-    cv::sortIdx(distances, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
+    cv::sortIdx(distances_hom, indices, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
     int thickness = 2;
     for(auto &index : indices){
       const cv::Point2d &pi0 = std::get<0>(ppairs_hom)[index];
@@ -381,10 +389,19 @@ int main(int argc, char *argv[])
     for(auto &index : indices){
       const cv::Point2d &pi0 = std::get<0>(ppairs_fund)[index];
       const cv::Point2d &pi1 = std::get<1>(ppairs_fund)[index];
+
+      /* const cv::Point2d &pi0_corr = std::get<0>(ppairs_fund2)[index]; */
+      /* const cv::Point2d &pi1_corr = std::get<1>(ppairs_fund2)[index]; */
+
       auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f);
+      /* auto shifted_point2 = pi1_corr + cv::Point2d((double)w0, 0.f); */
 
       cv::circle(disp_epi, pi0, thickness, cv::Scalar(255, 0, 0), -1);
       cv::circle(disp_epi, shifted_point, thickness, cv::Scalar(255, 0, 0), -1);
+
+      /* cv::circle(disp_epi, pi0_corr, thickness, cv::Scalar(255, 0, 255), -1); */
+      /* cv::circle(disp_epi, shifted_point2, thickness, cv::Scalar(255, 0, 255), -1); */
+
     }
 
     std::vector<cv::Point3d> lines0(std::get<1>(ppairs_fund).size());
