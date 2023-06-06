@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/features2d.hpp>
@@ -24,8 +25,6 @@
 #include "genIO.hpp" // io args and write matrices
 
 namespace fs = std::filesystem;
-
-
 
 static std::tuple<int, int> get_image_size(const std::string &im_path){
   int imsizes[] = {-1, -1};
@@ -67,6 +66,37 @@ static std::tuple<int, int> get_image_size(const std::string &im_path){
   return  std::make_tuple(imsizes[0], imsizes[1]);
 }
 
+static void calc_root_norm(cv::Mat &desc){
+
+  for(int i = 0; i < desc.rows; i++){
+    const float *d0 = desc.ptr<float>(i);
+    float l1norm = 0.0;
+    
+    // calculate l1 norm
+    for(int n = 0; n < desc.cols; n++){
+      l1norm += std::abs(d0[n]);
+    }
+
+    // normalize and sqrt
+    float *d1 = desc.ptr<float>(i);
+    for(int j = 0; j < desc.cols; j++){
+      float val = d1[j];
+      d1[j] = std::sqrt((val / (l1norm + 1e-8)));
+    }
+  }
+}
+
+void read_im_downsized(int max_size_width, int width, 
+                      cv::Mat &im, const std::string &im_path) {
+    if(width / max_size_width > 8)
+      im = cv::imread(im_path, cv::IMREAD_REDUCED_GRAYSCALE_8);
+    else if(width / max_size_width > 4)
+      im = cv::imread(im_path, cv::IMREAD_REDUCED_GRAYSCALE_4);
+    else if(width / max_size_width > 2)
+      im = cv::imread(im_path, cv::IMREAD_REDUCED_GRAYSCALE_2);
+    else
+      im = cv::imread(im_path, cv::IMREAD_GRAYSCALE);
+}
 
 int main(int argc, char *argv[])
 {
@@ -104,23 +134,11 @@ int main(int argc, char *argv[])
     cv::Mat im0, im1;
     int max_im_width = 1060;
 
-    if(w0 / max_im_width > 8)
-      im0 = cv::imread(im0_path, cv::IMREAD_REDUCED_GRAYSCALE_8);
-    else if(w0 / max_im_width > 4)
-      im0 = cv::imread(im0_path, cv::IMREAD_REDUCED_GRAYSCALE_4);
-    else if(w0 / max_im_width > 2)
-      im0 = cv::imread(im0_path, cv::IMREAD_REDUCED_GRAYSCALE_2);
-    else
-      im0 = cv::imread(im0_path, cv::IMREAD_GRAYSCALE);
+    read_im_downsized(max_im_width, w0, im0, im0_path);
+    read_im_downsized(max_im_width, w1, im1, im1_path);
 
-    if(w1 / max_im_width > 8)
-      im1 = cv::imread(im1_path, cv::IMREAD_REDUCED_GRAYSCALE_8);
-    else if(w1 / max_im_width > 4)
-      im1 = cv::imread(im1_path, cv::IMREAD_REDUCED_GRAYSCALE_4);
-    else if(w1 / max_im_width > 2)
-      im1 = cv::imread(im1_path, cv::IMREAD_REDUCED_GRAYSCALE_2);
-    else
-      im1 = cv::imread(im1_path, cv::IMREAD_GRAYSCALE);
+    std::cout << im0_path << " size " << im0.size().width << " "  << im0.size().height <<std::endl;
+    std::cout << im1_path << " size " << im1.size().width << " " << im1.size().height <<std::endl;
 
     w0 = im0.size().width;
     h0 = im0.size().height;
@@ -154,7 +172,7 @@ int main(int argc, char *argv[])
         matcher = cv::DescriptorMatcher::create("BruteForce-Hamming");
 
     }
-    else if(kpt_type == "sift" || kpt_type == "sift-root"){
+    else if(kpt_type == "sift" || kpt_type == "root-sift"){
       backend = cv::SIFT::create();
       matcher = cv::DescriptorMatcher::create(use_flann ? 
           "FlannBased" :
@@ -191,7 +209,8 @@ int main(int argc, char *argv[])
     aff->detectAndCompute(im1, cv::Mat(), kp1, desc1);
 
     if(kpt_type == "root-sift"){
-      /* TODO: calculate root sift*/
+      calc_root_norm(desc0);
+      calc_root_norm(desc1);
     }
 
     auto t1 = std::chrono::high_resolution_clock::now();
