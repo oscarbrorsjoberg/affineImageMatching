@@ -161,7 +161,6 @@ int main(int argc, char *argv[])
 
     cv::Ptr<cv::Feature2D> backend;
     cv::Ptr<cv::DescriptorMatcher> matcher;
-    cv::Ptr<cv::AffineFeature> aff;
 
     if(kpt_type == "orb"){
       backend = cv::ORB::create();
@@ -174,6 +173,13 @@ int main(int argc, char *argv[])
     }
     else if(kpt_type == "sift" || kpt_type == "root-sift"){
       backend = cv::SIFT::create();
+      matcher = cv::DescriptorMatcher::create(use_flann ? 
+          "FlannBased" :
+          "BruteForce"
+          );
+    }
+    else if(kpt_type == "harris"){
+      backend = cv::xfeatures2d::HarrisLaplaceFeatureDetector::create();
       matcher = cv::DescriptorMatcher::create(use_flann ? 
           "FlannBased" :
           "BruteForce"
@@ -196,7 +202,8 @@ int main(int argc, char *argv[])
     else{
       throw std::runtime_error(kpt_type + " is not a known key-point backend");
     }
-    aff = cv::AffineFeature::create(backend);
+    auto aff = cv::AffineFeature::create(backend);
+    /* auto aff = cv::xfeatures2d::AffineFeature2D::create(backend, cv::SIFT::create()); */
 
     std::cout << aff->getDefaultName() << "with backend " << kpt_type << std::endl;
 
