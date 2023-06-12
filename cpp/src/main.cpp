@@ -49,7 +49,10 @@ static std::tuple<int, int> get_image_size(const std::string &im_path){
         for(int i = 0; i < 2; ++i){
           std::string size;
           std::getline(iss, size, ' ');
+          /* size.erase(std::remove_if(size.begin(), size.end(), std::isspace), size.end()); */
+          /* size.strio */
           imsizes[i] = std::stoi(size);
+
         }
       }
       read_headers++;
@@ -71,7 +74,7 @@ static void calc_root_norm(cv::Mat &desc){
   for(int i = 0; i < desc.rows; i++){
     const float *d0 = desc.ptr<float>(i);
     float l1norm = 0.0;
-    
+
     // calculate l1 norm
     for(int n = 0; n < desc.cols; n++){
       l1norm += std::abs(d0[n]);
@@ -86,7 +89,7 @@ static void calc_root_norm(cv::Mat &desc){
   }
 }
 
-void read_im_downsized(int max_size_width, int width, 
+void read_im_downsized(int max_size_width, int width,
                       cv::Mat &im, const std::string &im_path) {
     if(width / max_size_width > 8)
       im = cv::imread(im_path, cv::IMREAD_REDUCED_GRAYSCALE_8);
@@ -103,7 +106,8 @@ int main(int argc, char *argv[])
   try {
     std::string im0_path, im1_path, mat_in,
       kpt_type = "orb",
-      mat_out = "im0_im1_mat";
+      mat_out = "eufr_H",
+      mat_out2 = "gt_H";
 
     bool use_flann = false;
     bool vis = true;
@@ -118,6 +122,7 @@ int main(int argc, char *argv[])
     opts.add_argument("--vis",        "-v",    "visualize the result of matching", &vis, false);
     opts.add_argument("--matrix_out", "-mo",   "(F/H)Matrix output path", &mat_out, false);
     opts.add_argument("--matrix_in",  "-mi",   "(F/H)Matrix input path", &mat_in, false);
+    opts.add_argument("--matrix_out2",  "-mo2",   "(F/H)Matrix output path 2", &mat_out2, false);
 
     if(!opts.parse_args(argc, argv)){
       opts.help();
@@ -260,12 +265,12 @@ int main(int argc, char *argv[])
     std::vector<double> model_error_hom;
     std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_hom = std::make_tuple(std::vector<cv::Point2d>{},
                                                                                                 std::vector<cv::Point2d>{});
-    std::thread homThread(calcHomography, 
-                          std::ref(p0_norm), 
-                          std::ref(p1_norm), 
-                          std::ref(p0), 
-                          std::ref(p1), 
-                          std::ref(ppairs_hom), 
+    std::thread homThread(calcHomography,
+                          std::ref(p0_norm),
+                          std::ref(p1_norm),
+                          std::ref(p0),
+                          std::ref(p1),
+                          std::ref(ppairs_hom),
                           std::ref(distances_hom),
                           std::ref(model_error_hom),
                           std::ref(Hnorm)
@@ -277,13 +282,13 @@ int main(int argc, char *argv[])
     std::vector<double> model_error_fund;
     std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_fund = std::make_tuple(std::vector<cv::Point2d>{},
                                                                                                 std::vector<cv::Point2d>{});
-    std::thread fundThread(calcFundamental, 
-                          std::ref(p0_norm), 
-                          std::ref(p1_norm), 
-                          std::ref(p0), 
-                          std::ref(p1), 
-                          std::ref(ppairs_fund), 
-                          std::ref(distances_fund), 
+    std::thread fundThread(calcFundamental,
+                          std::ref(p0_norm),
+                          std::ref(p1_norm),
+                          std::ref(p0),
+                          std::ref(p1),
+                          std::ref(ppairs_fund),
+                          std::ref(distances_fund),
                           std::ref(model_error_fund),
                           std::ref(Fnorm)
                           );
@@ -367,13 +372,16 @@ int main(int argc, char *argv[])
     cv::polylines(disp_hom, icorners, true, cv::Scalar(255, 255, 255));
 
     if(!mat_in.empty()){
-      cv::Mat H_gt(3,3, CV_32F);
+      cv::Mat H_gt(3,3, CV_64F);
       std::vector<cv::Point2f> corners_gt(4);
       read_model_matrix(mat_in, H_gt);
       cv::perspectiveTransform(corners, corners_gt, H_gt);
       cv::transform(corners_gt, corners_gt, cv::Matx23f(1, 0, (float)w0, 0, 1, 0));
       cv::Mat(corners_gt).convertTo(icorners, CV_32S);
       cv::polylines(disp_hom, icorners, true, cv::Scalar(0, 255, 0));
+      std::cout << "writing matrix 2 \n";
+      write_model_matrix(mat_out2, H_gt);
+
     }
 
     // homography
@@ -448,25 +456,27 @@ int main(int argc, char *argv[])
 
     write_model_matrix(mat_out, H);
 
-    cv::imshow("epipolar lines", disp_epi);
+    if(vis){
+      cv::imshow("epipolar lines", disp_epi);
 
-    std::cout << "Press q to quit window\n";
-    std::cout << "Press h to vis hom match\n";
-    std::cout << "Press e to vis epipolar lines\n";
+      std::cout << "Press q to quit window\n";
+      std::cout << "Press h to vis hom match\n";
+      std::cout << "Press e to vis epipolar lines\n";
 
-    std::chrono::duration<double, std::milli> wait_time(20);
+      std::chrono::duration<double, std::milli> wait_time(20);
 
-    int k = ' ';
-    while(k != 'q'){
-      if(k == 'h')
-        cv::imshow("hom match", disp_hom);
-      else if(k == 'e')
-        cv::imshow("epipolar lines", disp_epi);
-      /* else if(k == 'r') */
-      /*   cv::imshow("rectified result", disp_rect); */
+      int k = ' ';
+      while(k != 'q'){
+        if(k == 'h')
+          cv::imshow("hom match", disp_hom);
+        else if(k == 'e')
+          cv::imshow("epipolar lines", disp_epi);
+        /* else if(k == 'r') */
+        /*   cv::imshow("rectified result", disp_rect); */
 
-      std::this_thread::sleep_for(wait_time);
-      k = cv::pollKey();
+        std::this_thread::sleep_for(wait_time);
+        k = cv::pollKey();
+      }
     }
 
 

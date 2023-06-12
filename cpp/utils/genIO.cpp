@@ -15,18 +15,18 @@ void write_model_matrix(const std::string &path,
 
   std::ofstream outfile(path);
 
-  outfile << 
-   model_matrix.at<float>(0,0) << " " <<
-   model_matrix.at<float>(0,1) << " " <<
-   model_matrix.at<float>(0,2) << "\n" <<
+  outfile <<
+   model_matrix.at<double>(0,0) / model_matrix.at<double>(2,2) << " " <<
+   model_matrix.at<double>(0,1) / model_matrix.at<double>(2,2) << " " <<
+   model_matrix.at<double>(0,2) / model_matrix.at<double>(2,2) << "\n" <<
 
-   model_matrix.at<float>(1,0) << " " <<
-   model_matrix.at<float>(1,1) << " " <<
-   model_matrix.at<float>(1,2) << "\n" <<
+   model_matrix.at<double>(1,0) / model_matrix.at<double>(2,2) << " " <<
+   model_matrix.at<double>(1,1) / model_matrix.at<double>(2,2) << " " <<
+   model_matrix.at<double>(1,2) / model_matrix.at<double>(2,2) << "\n" <<
 
-   model_matrix.at<float>(2,0) << " " <<
-   model_matrix.at<float>(2,1) << " " <<
-   model_matrix.at<float>(2,2) << "\n";
+   model_matrix.at<double>(2,0) / model_matrix.at<double>(2,2) << " " <<
+   model_matrix.at<double>(2,1) / model_matrix.at<double>(2,2) << " " <<
+   model_matrix.at<double>(2,2) / model_matrix.at<double>(2,2) << "\n";
 
   outfile.close();
 }
@@ -39,17 +39,17 @@ void read_model_matrix(const std::string &path,
 
   std::ifstream infile(path);
 
-  infile >> model_matrix.at<float>(0,0) >> 
-   model_matrix.at<float>(0,1) >> 
-   model_matrix.at<float>(0,2) >> 
+  infile >> model_matrix.at<double>(0,0) >> 
+   model_matrix.at<double>(0,1) >> 
+   model_matrix.at<double>(0,2) >> 
 
-   model_matrix.at<float>(1,0) >> 
-   model_matrix.at<float>(1,1) >> 
-   model_matrix.at<float>(1,2) >> 
+   model_matrix.at<double>(1,0) >> 
+   model_matrix.at<double>(1,1) >> 
+   model_matrix.at<double>(1,2) >> 
 
-   model_matrix.at<float>(2,0) >> 
-   model_matrix.at<float>(2,1) >> 
-   model_matrix.at<float>(2,2); 
+   model_matrix.at<double>(2,0) >> 
+   model_matrix.at<double>(2,1) >> 
+   model_matrix.at<double>(2,2); 
 
   infile.close();
 }

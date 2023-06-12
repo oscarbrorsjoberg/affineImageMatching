@@ -55,6 +55,7 @@ def create_mma_list(inpt_path: Path) -> List[float]:
 
             gtH = read_Hmat(Path(f"{trans}/gt_H"))
             gtH = gtH / gtH[2,2]
+
             predH = read_Hmat(Path(f"{trans}/eufr_H"))
             predH = predH / predH[2,2]
 
@@ -108,78 +109,9 @@ if __name__ == "__main__":
 
     args = prser.parse_args()
 
-    # fldrs = [Path(x) for x in glob.glob(f"{args.inputfolder}/*", recursive=False)]
-
     for path in args.inputfolders:
         mma = create_mma_list(path)
         plt.plot(mma)
 
     plt.show()
 
-    # head_dict = {"seq_name": [],
-    #              "image_ref": [],
-    #              "image_quer": [],
-    #              "i": [],
-    #              "j": [],
-    #              "u": [],
-    #              "v": [],
-    #              "gu": [],
-    #              "gv": [],
-    #             }
-
-    # for i, seq in enumerate(fldrs):
-    #     seq_name = seq.stem
-    #     for trans in glob.glob(f"{seq}/*_*", recursive=False):
-
-    #         requer = Path(trans).stem.split("_")
-    #         ref = requer[0]
-    #         quer = requer[1]
-
-    #         gtH = read_Hmat(Path(f"{trans}/gt_H"))
-    #         gtH = gtH / gtH[2,2]
-    #         predH = read_Hmat(Path(f"{trans}/eufr_H"))
-    #         predH = predH / predH[2,2]
-
-    #         im0size = get_image_size(f"{trans}/im0.png")
-    #         im1size = get_image_size(f"{trans}/im1.png")
-
-    #         upts = np.linspace(0.0, im1size[0], 5) + 0.5
-    #         vpts = np.linspace(0.0, im1size[1], 5) + 0.5
-
-
-    #         for i, u in enumerate(upts):
-    #             for j, v in enumerate(vpts):
-    #                 pred_pos = np.dot(predH, np.array([u, v, 1.0]))
-    #                 gt_pos = np.dot(gtH, np.array([u, v, 1.0]))
-
-    #                 pred_pos = pred_pos /pred_pos[2]
-    #                 gt_pos = gt_pos /gt_pos[2]
-
-    #                 head_dict["seq_name"].append(seq_name)
-    #                 head_dict["image_ref"].append(ref)
-    #                 head_dict["image_quer"].append(quer)
-
-    #                 head_dict["i"].append(i)
-    #                 head_dict["j"].append(j)
-
-    #                 head_dict["u"].append(pred_pos[0])
-    #                 head_dict["v"].append(pred_pos[1])
-
-    #                 head_dict["gu"].append(gt_pos[0])
-    #                 head_dict["gv"].append(gt_pos[1])
-
-
-    # df = pd.DataFrame(head_dict)
-
-    # df["uerr"] = df["u"] - df["gu"]
-    # df["verr"] = df["v"] - df["gv"]
-    # df["rmse"] = np.sqrt((df["v"] - df["gv"])**2 + 
-    #                      (df["v"] - df["gv"])**2)
-
-    # df.sort_values(by=["rmse"], ascending=True)
-    # list_of_mma = []
-    # for threshold in np.linspace(0.01, 40.0, 200):
-    #     list_of_mma.append((df["rmse"] <= threshold).sum() / df.shape[0])
-
-    plt.plot(list_of_mma)
-    plt.show()
