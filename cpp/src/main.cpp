@@ -7,7 +7,7 @@
 #include <opencv2/xfeatures2d.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/calib3d.hpp>
-#include <exiv2/exiv2.hpp>
+/* #include <exiv2/exiv2.hpp> */
 
 
 #include <algorithm>
@@ -61,10 +61,11 @@ static std::tuple<int, int> get_image_size(const std::string &im_path){
 
   }
   else{
-    auto tim = Exiv2::ImageFactory::open(im_path);
-    tim->readMetadata();
-    imsizes[0] = tim->pixelWidth();
-    imsizes[1] = tim->pixelHeight();
+    throw std::runtime_error("Not implemented");
+    /* auto tim = Exiv2::ImageFactory::open(im_path); */
+    /* tim->readMetadata(); */
+    /* imsizes[0] = tim->pixelWidth(); */
+    /* imsizes[1] = tim->pixelHeight(); */
   }
   return  std::make_tuple(imsizes[0], imsizes[1]);
 }
@@ -107,49 +108,68 @@ int main(int argc, char *argv[])
     std::string im0_path, im1_path, mat_in,
       kpt_type = "orb",
       mat_out = "eufr_H",
-      mat_out2 = "gt_H";
+      mat_out2 = "gt_H",
+      out_folder = "";
 
     bool use_flann = false;
     bool vis = true;
+    bool pre_im_size = false;
 
 
     appInputOpts opts("viewChange");
 
-    opts.add_argument("--image0",     "-im0",  "path to first image", &im0_path, true);
-    opts.add_argument("--image1",     "-im1",  "path to second image", &im1_path, true);
-    opts.add_argument("--keypoint",   "-k",    "kpt type", &kpt_type, false);
-    opts.add_argument("--flann",      "-f",    "if using flann or brute force matching", &use_flann, false);
-    opts.add_argument("--vis",        "-v",    "visualize the result of matching", &vis, false);
-    opts.add_argument("--matrix_out", "-mo",   "(F/H)Matrix output path", &mat_out, false);
-    opts.add_argument("--matrix_in",  "-mi",   "(F/H)Matrix input path", &mat_in, false);
+    opts.add_argument("--image0",       "-im0",  "path to first image", &im0_path, true);
+    opts.add_argument("--image1",       "-im1",  "path to second image", &im1_path, true);
+    opts.add_argument("--keypoint",     "-k",    "kpt type", &kpt_type, false);
+    opts.add_argument("--flann",        "-f",    "if using flann or brute force matching", &use_flann, false);
+    opts.add_argument("--vis",          "-v",    "visualize the result of matching", &vis, false);
+    opts.add_argument("--out_folder",   "-of",    "out folder to put im0, im1 and matrixes", &out_folder, false);
+    opts.add_argument("--matrix_out",   "-mo",   "(F/H)Matrix output path", &mat_out, false);
     opts.add_argument("--matrix_out2",  "-mo2",   "(F/H)Matrix output path 2", &mat_out2, false);
+    opts.add_argument("--matrix_in",    "-mi",   "(F/H)Matrix input path", &mat_in, false);
+    opts.add_argument("--pre_im_size",  "-pis",  "Do a downsampled read if images are to large", 
+        &pre_im_size, false);
 
     if(!opts.parse_args(argc, argv)){
       opts.help();
       throw std::runtime_error("Non-valid input");
     }
 
+    if(!out_folder.empty()){
+      mat_out = out_folder + "/" + mat_out;
+      mat_out2 = out_folder + "/" + mat_out2;
+    }
+
     assert(fs::exists(fs::path(im0_path)));
     assert(fs::exists(fs::path(im1_path)));
 
     // pre read imag sizes so not to have to load the whole image to memory
-    auto [w0, h0] = get_image_size(im0_path);
-    auto [w1, h1] = get_image_size(im1_path);
-
+    //
     cv::Mat im0, im1;
-    int max_im_width = 1060;
+    if(pre_im_size){
 
-    read_im_downsized(max_im_width, w0, im0, im0_path);
-    read_im_downsized(max_im_width, w1, im1, im1_path);
+      auto [w0p, h0p] = get_image_size(im0_path);
+      auto [w1p, h1p] = get_image_size(im1_path);
+
+      int max_im_width = 999999;
+
+      read_im_downsized(max_im_width, w0p, im0, im0_path);
+      read_im_downsized(max_im_width, w1p, im1, im1_path);
+
+    }
+    else{
+      im0 = cv::imread(im0_path, cv::IMREAD_GRAYSCALE);
+      im1 = cv::imread(im1_path, cv::IMREAD_GRAYSCALE);
+    }
 
     std::cout << im0_path << " size " << im0.size().width << " "  << im0.size().height <<std::endl;
     std::cout << im1_path << " size " << im1.size().width << " " << im1.size().height <<std::endl;
 
-    w0 = im0.size().width;
-    h0 = im0.size().height;
+    int w0 = im0.size().width;
+    int h0 = im0.size().height;
 
-    w1 = im1.size().width;
-    h1 = im1.size().height;
+    int w1 = im1.size().width;
+    int h1 = im1.size().height;
 
     // display image
     cv::Mat disp_hom = cv::Mat::zeros(cv::max(h0, h1), w0 + w1, CV_8U);
@@ -454,6 +474,8 @@ int main(int argc, char *argv[])
       cv::polylines(disp_epi, ieCorners, true, cv::Scalar(0, 255, 0));
     }
 
+
+
     write_model_matrix(mat_out, H);
 
     if(vis){
@@ -478,6 +500,15 @@ int main(int argc, char *argv[])
         k = cv::pollKey();
       }
     }
+    if(!out_folder.empty()){
+      cv::Mat imOut0, imOut1;
+      cv::cvtColor(im0, imOut0, cv::COLOR_GRAY2BGR);
+      cv::cvtColor(im1, imOut1, cv::COLOR_GRAY2BGR);
+
+      cv::imwrite(out_folder + "/0.ppm", imOut0);
+      cv::imwrite(out_folder + "/1.ppm", imOut1);
+    }
+        
 
 
   }

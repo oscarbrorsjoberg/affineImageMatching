@@ -32,7 +32,7 @@ def get_image_size(image_path):
         return img.size
 
 
-def create_mma_list(inpt_path: Path) -> List[float]:
+def create_mma_list(inpt_path: Path) -> List[List[float]]:
     fldrs = [Path(x) for x in glob.glob(f"{inpt_path}/*", recursive=False)]
     head_dict = {"seq_name": [],
                  "image_ref": [],
@@ -58,9 +58,11 @@ def create_mma_list(inpt_path: Path) -> List[float]:
 
             predH = read_Hmat(Path(f"{trans}/eufr_H"))
             predH = predH / predH[2,2]
+            im0 = f"{trans}/0.ppm" if Path(f"{trans}/0.ppm").exists() else f"{trans}/0.png"
+            im1 = f"{trans}/1.ppm" if Path(f"{trans}/1.ppm").exists() else f"{trans}/1.png"
 
-            im0size = get_image_size(f"{trans}/im0.png")
-            im1size = get_image_size(f"{trans}/im1.png")
+            im0size = get_image_size(im0)
+            im1size = get_image_size(im1)
 
             upts = np.linspace(0.0, im1size[0], 5) + 0.5
             vpts = np.linspace(0.0, im1size[1], 5) + 0.5
@@ -95,23 +97,49 @@ def create_mma_list(inpt_path: Path) -> List[float]:
     df["rmse"] = np.sqrt((df["v"] - df["gv"])**2 + 
                          (df["v"] - df["gv"])**2)
 
-    df.sort_values(by=["rmse"], ascending=True)
-    list_of_mma = []
-    for threshold in np.linspace(0.01, 40.0, 200):
-        list_of_mma.append((df["rmse"] <= threshold).sum() / df.shape[0])
+    out = []
+    for i, k in enumerate(["v", "i", ""]):
+        if(k != ""):
+            dftemp = df[df["seq_name"].str[0] == k]
+        else:
+            dftemp = df
 
-    return list_of_mma
+        dftemp.sort_values(by=["rmse"], ascending=True)
+
+        list_of_mma = []
+        for threshold in np.linspace(0.01, 40.0, 200):
+            list_of_mma.append((dftemp["rmse"] <= threshold).sum() / dftemp.shape[0])
+
+        out.append(list_of_mma)
+
+    return out
 
 if __name__ == "__main__":
     prser = argparse.ArgumentParser("Hom interface")
     prser.add_argument("--inputfolders", "-ifs", type=Path, required=True,
                        nargs='+')
+    prser.add_argument("--labels", "-l", type=Path, required=True,
+                       nargs='+')
 
     args = prser.parse_args()
 
-    for path in args.inputfolders:
-        mma = create_mma_list(path)
-        plt.plot(mma)
+    fig, ax = plt.subplots(1, 3)
+
+    for path, label in zip(args.inputfolders, args.labels):
+        for i, mma in enumerate(create_mma_list(path)):
+            if i == 0:
+                imtypes = "viewpoint"
+            elif i == 1:
+                imtypes = "illumination"
+            else:
+                imtypes = "all"
+
+            ax[i].plot(mma, label=label)
+            ax[i].set_xlabel("pixel error")
+            ax[i].set_ylabel("MMA")
+            ax[i].title.set_text(f"{imtypes}")
+
+    plt.legend()
 
     plt.show()
 

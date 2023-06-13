@@ -4,9 +4,9 @@ import os
 
 
 
-image_data = "/home/oscar/sw/vision/AffineMapsTest/imageData/hpatches-sequences-release/"
-app = "/home/oscar/sw/vision/AffineMapsTest/cpp/bin/viewChange"
-outdir = "/home/oscar/sw/vision/AffineMapsTest/cpp/hpatches_test/"
+image_data = "/se/team/p3dr/data/machine_vision_training/hpatches/hpatches-sequences-release/"
+app = "/se/work/oscsj/affineImageMatching/cpp/bin/viewChange"
+outdir = "/se/work/oscsj/hpatches_test_root_sift/"
 
 
 fls = glob.glob(f"{image_data}/*", recursive=False)
@@ -35,10 +35,11 @@ for f in fls:
               f"-im1 {pair[1]} "
               "-k root-sift "
               "--flann 1 "
-              f"-mo {imseq}/eufr_H "
-              f"-mo2 {imseq}/gt_H "
+              f"-mo eufr_H "
+              f"-mo2 gt_H "
               f"-mi {f}/H_1_{i+2} "
-              "--vis 0"
+              "--vis 0 "
+              f"-of {imseq}/"
              )
 
         # exit()
