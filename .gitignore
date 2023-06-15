@@ -1,1 +1,6 @@
 imageData/
+match-results/
+cpp/bin/*
+cpp/build/*
+cpp/tags
+*.cache*

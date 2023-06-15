@@ -329,16 +329,6 @@ int main(int argc, char *argv[])
     std::cout << "Largest error Sf " << Flargest_error << std::endl;
     std::cout << "Fundamental inliers " << std::get<0>(ppairs_fund).size() << std::endl;
 
-    /* std::tuple<std::vector<cv::Point2d>, std::vector<cv::Point2d>> ppairs_fund2 = std::make_tuple(std::vector<cv::Point2d>{}, */
-    /*                                                                                             std::vector<cv::Point2d>{}); */
-
-    /* cv::correctMatches(F, std::get<0>(ppairs_fund), std::get<1>(ppairs_fund), std::get<0>(ppairs_fund2), std::get<1>(ppairs_fund2)); */
-
-    /* std::cout << "Fundamental inliers " << std::get<0>(ppairs_fund2).size() << std::endl; */
-
-
-
-
     std::cout << "Error Rh " << Rh << std::endl;
     auto &ppairs = Rh  > 0.45 ? ppairs_hom : ppairs_fund; 
     bool homSelected = Rh  > 0.45;
@@ -393,29 +383,19 @@ int main(int argc, char *argv[])
       const cv::Point2d &pi1 = std::get<1>(ppairs_hom)[index];
       auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f);
       cv::circle(disp_hom, pi0, thickness, cv::Scalar(0, 255, 0), -1);
-      cv::circle(disp_hom, shifted_point, thickness, cv::Scalar(0, 255, 0), -1);
+      cv::circle(disp_hom, shifted_point, thickness, cv::Scalar(255, 0, 0), -1);
       cv::line(disp_hom, pi0, shifted_point, cv::Scalar(0, 255, 0));
     }
 
     // points for F and epipolar lines
-
     std::vector<int> indices_fund(std::get<0>(ppairs_fund).size());
     cv::sortIdx(distances_fund, indices_fund, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
     for(auto &index : indices){
       const cv::Point2d &pi0 = std::get<0>(ppairs_fund)[index];
       const cv::Point2d &pi1 = std::get<1>(ppairs_fund)[index];
-
-      /* const cv::Point2d &pi0_corr = std::get<0>(ppairs_fund2)[index]; */
-      /* const cv::Point2d &pi1_corr = std::get<1>(ppairs_fund2)[index]; */
-
       auto shifted_point = pi1 + cv::Point2d((double)w0, 0.f);
-      /* auto shifted_point2 = pi1_corr + cv::Point2d((double)w0, 0.f); */
-
       cv::circle(disp_epi, pi0, thickness, cv::Scalar(255, 0, 0), -1);
-      cv::circle(disp_epi, shifted_point, thickness, cv::Scalar(255, 0, 0), -1);
-
-      /* cv::circle(disp_epi, pi0_corr, thickness, cv::Scalar(255, 0, 255), -1); */
-      /* cv::circle(disp_epi, shifted_point2, thickness, cv::Scalar(255, 0, 255), -1); */
+      cv::circle(disp_epi, shifted_point, thickness, cv::Scalar(0, 255, 0), -1);
 
     }
 
@@ -425,6 +405,7 @@ int main(int argc, char *argv[])
     cv::computeCorrespondEpilines(std::get<1>(ppairs_fund), 2, F, lines0);
     cv::computeCorrespondEpilines(std::get<0>(ppairs_fund), 1, F, lines1);
 
+ // TODO: function
     for(auto &line: lines0){
       std::vector<cv::Point2d> eCorners(2);
       std::vector<cv::Point2i> ieCorners;
@@ -455,6 +436,9 @@ int main(int argc, char *argv[])
     }
 
     write_model_matrix(mat_out, H);
+
+    cv::imwrite("hom.png", disp_hom);
+    cv::imwrite("epi.png", disp_epi);
 
     if(vis){
       cv::imshow("epipolar lines", disp_epi);
