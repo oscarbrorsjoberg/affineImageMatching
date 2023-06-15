@@ -1,0 +1,3 @@
+[submodule "loftr"]
+	path = loftr
+	url = https://github.com/oscarbrorsjoberg/loftr
