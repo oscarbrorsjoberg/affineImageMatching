@@ -1,3 +1,6 @@
 [submodule "loftr"]
 	path = loftr
 	url = https://github.com/oscarbrorsjoberg/loftr
+[submodule "sift-aid"]
+	path = sift-aid
+	url = https://github.com/oscarbrorsjoberg/sift-aid
